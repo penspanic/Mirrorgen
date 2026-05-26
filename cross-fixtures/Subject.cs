@@ -48,6 +48,10 @@ public static class Subject
         return b;
     }
 
+    // String parameter — exercises the string-sampling path.
+    [Transpile, GenerateCrossTest(Samples = 8, Seed = 17)]
+    public static string Echo(string s) => s;
+
     // Composition — IncTwice calls AddOne twice via the [Transpile] -> [Transpile] path.
     [Transpile, GenerateCrossTest(Samples = 8, Seed = 11)]
     public static int IncTwice(int x) => AddOne(AddOne(x));

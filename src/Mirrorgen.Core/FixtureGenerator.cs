@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -121,8 +122,23 @@ public static class FixtureGenerator
         if (t == typeof(bool)) return rng.Next(2) == 0;
         if (t == typeof(float)) return (float)(rng.NextDouble() * 200.0 - 100.0);
         if (t == typeof(double)) return rng.NextDouble() * 200.0 - 100.0;
+        if (t == typeof(string)) return GenerateString(rng);
         throw new NotSupportedException(
             $"FixtureGenerator argument sampling does not yet support type '{t}' (method '{methodName}', parameter '{paramName}').");
+    }
+
+    const string StringPool = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_.";
+
+    static string GenerateString(Random rng)
+    {
+        int length = rng.Next(0, 17); // 0..16 inclusive
+        if (length == 0) return string.Empty;
+        var sb = new StringBuilder(length);
+        for (int i = 0; i < length; i++)
+        {
+            sb.Append(StringPool[rng.Next(StringPool.Length)]);
+        }
+        return sb.ToString();
     }
 
     static bool HasAttribute(MethodInfo method, string fullTypeName)

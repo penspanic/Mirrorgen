@@ -42,6 +42,9 @@ public class FixtureGeneratorTests
 
         [Transpile, GenerateCrossTest(Samples = 4, Seed = 99)]
         public static double DoubleIt(double v) => v * 2.0;
+
+        [Transpile, GenerateCrossTest(Samples = 6, Seed = 13)]
+        public static string Echo(string s) => s;
     }
 
     // Held in a separate type so assembly-wide GenerateForAssembly scans
@@ -152,6 +155,34 @@ public class FixtureGeneratorTests
             var v = Assert.IsType<double>(Assert.Single(call.Args));
             Assert.InRange(v, -100.0, 100.0);
             Assert.Equal(v * 2.0, (double)call.Expected!, precision: 12);
+        }
+    }
+
+    [Fact]
+    public void Sampled_String_Method_Stays_In_Range_And_Pool()
+    {
+        const string Pool = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_.";
+        var m = typeof(Sampled).GetMethod(nameof(Sampled.Echo))!;
+        var record = FixtureGenerator.GenerateFor(m);
+        Assert.Equal(6, record.Calls.Count);
+        foreach (var call in record.Calls)
+        {
+            var s = Assert.IsType<string>(Assert.Single(call.Args));
+            Assert.True(s.Length <= 16, $"length {s.Length} > 16: '{s}'");
+            foreach (var c in s) Assert.Contains(c, Pool);
+            Assert.Equal(s, call.Expected);
+        }
+    }
+
+    [Fact]
+    public void Sampled_String_Method_Is_Deterministic_For_Same_Seed()
+    {
+        var m = typeof(Sampled).GetMethod(nameof(Sampled.Echo))!;
+        var first = FixtureGenerator.GenerateFor(m);
+        var second = FixtureGenerator.GenerateFor(m);
+        for (int i = 0; i < first.Calls.Count; i++)
+        {
+            Assert.Equal(first.Calls[i].Args[0], second.Calls[i].Args[0]);
         }
     }
 

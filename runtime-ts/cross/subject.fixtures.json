@@ -357,6 +357,59 @@
     ]
   },
   {
+    "name": "Echo",
+    "calls": [
+      {
+        "args": [
+          "1Qm6BI_fJ1"
+        ],
+        "expected": "1Qm6BI_fJ1"
+      },
+      {
+        "args": [
+          "vu6QaJj7eb5_"
+        ],
+        "expected": "vu6QaJj7eb5_"
+      },
+      {
+        "args": [
+          "EKoqYE"
+        ],
+        "expected": "EKoqYE"
+      },
+      {
+        "args": [
+          "iBMGh-qOKC3n5Yh"
+        ],
+        "expected": "iBMGh-qOKC3n5Yh"
+      },
+      {
+        "args": [
+          "1Ezz_ NM S2B"
+        ],
+        "expected": "1Ezz_ NM S2B"
+      },
+      {
+        "args": [
+          "tWuf6O7WzJcsIw"
+        ],
+        "expected": "tWuf6O7WzJcsIw"
+      },
+      {
+        "args": [
+          "lSgNw2BZzf"
+        ],
+        "expected": "lSgNw2BZzf"
+      },
+      {
+        "args": [
+          "m1.KCj3XqUJh.ko."
+        ],
+        "expected": "m1.KCj3XqUJh.ko."
+      }
+    ]
+  },
+  {
     "name": "IncTwice",
     "calls": [
       {

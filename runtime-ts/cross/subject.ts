@@ -51,6 +51,10 @@ export function Max(a: number, b: number): number {
   return b;
 }
 
+export function Echo(s: string): string {
+  return s;
+}
+
 export function IncTwice(x: number): number {
   return AddOne(AddOne(x));
 }
