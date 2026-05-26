@@ -47,6 +47,9 @@ public static class TranspilerEngine
 
         public bool IsInt32(ExpressionSyntax expr) =>
             TypeOf(expr)?.SpecialType == SpecialType.System_Int32;
+
+        public ITypeSymbol? LocalTypeOf(VariableDeclaratorSyntax variable) =>
+            (_model.GetDeclaredSymbol(variable) as ILocalSymbol)?.Type;
     }
 
     static readonly Lazy<MetadataReference[]> TrustedReferences = new(BuildTrustedReferences);
@@ -120,6 +123,21 @@ public static class TranspilerEngine
         };
     }
 
+    static string MapTypeSymbol(ITypeSymbol type)
+    {
+        return type.SpecialType switch
+        {
+            SpecialType.System_Int32 or SpecialType.System_Int64 or SpecialType.System_Int16
+                or SpecialType.System_Byte or SpecialType.System_SByte
+                or SpecialType.System_UInt32 or SpecialType.System_UInt64 or SpecialType.System_UInt16
+                or SpecialType.System_Single or SpecialType.System_Double => "number",
+            SpecialType.System_Boolean => "boolean",
+            SpecialType.System_String => "string",
+            SpecialType.System_Void => "void",
+            _ => throw new NotSupportedException($"Unsupported type: {type.ToDisplayString()}"),
+        };
+    }
+
     const string BodyIndent = "  ";
 
     static string EmitMethodBody(MethodDeclarationSyntax method, EmitContext ctx)
@@ -157,9 +175,40 @@ public static class TranspilerEngine
                 return sb.ToString();
             case IfStatementSyntax ifs:
                 return EmitIf(ifs, ctx, indent, leadIndent: true);
+            case LocalDeclarationStatementSyntax localDecl:
+                return EmitLocalDeclaration(localDecl, ctx, indent);
+            case ExpressionStatementSyntax exprStmt:
+                return $"{indent}{EmitExpression(exprStmt.Expression, ctx)};\n";
             default:
                 throw new NotSupportedException($"Unsupported statement: {stmt.Kind()}");
         }
+    }
+
+    static string EmitLocalDeclaration(LocalDeclarationStatementSyntax local, EmitContext ctx, string indent)
+    {
+        var declaration = local.Declaration;
+        if (declaration.Variables.Count != 1)
+        {
+            throw new NotSupportedException("Multi-variable declarations are not yet supported.");
+        }
+        var variable = declaration.Variables[0];
+
+        string tsType;
+        if (declaration.Type.IsVar)
+        {
+            var symbolType = ctx.LocalTypeOf(variable)
+                ?? throw new NotSupportedException($"Cannot resolve type of local '{variable.Identifier.Text}'.");
+            tsType = MapTypeSymbol(symbolType);
+        }
+        else
+        {
+            tsType = MapType(declaration.Type);
+        }
+
+        var initEmit = variable.Initializer is { } init
+            ? $" = {EmitExpression(init.Value, ctx)}"
+            : string.Empty;
+        return $"{indent}let {variable.Identifier.Text}: {tsType}{initEmit};\n";
     }
 
     static string EmitIf(IfStatementSyntax ifs, EmitContext ctx, string indent, bool leadIndent)
@@ -222,9 +271,25 @@ public static class TranspilerEngine
                 return $"{MapPrefixUnaryOperator(pre.OperatorToken)}{EmitExpression(pre.Operand, ctx)}";
             case ConditionalExpressionSyntax cond:
                 return $"{EmitExpression(cond.Condition, ctx)} ? {EmitExpression(cond.WhenTrue, ctx)} : {EmitExpression(cond.WhenFalse, ctx)}";
+            case AssignmentExpressionSyntax assign:
+                return $"{EmitExpression(assign.Left, ctx)} {MapAssignmentOperator(assign.OperatorToken)} {EmitExpression(assign.Right, ctx)}";
             default:
                 throw new NotSupportedException($"Unsupported expression: {expr.Kind()}");
         }
+    }
+
+    static string MapAssignmentOperator(SyntaxToken op)
+    {
+        return op.Kind() switch
+        {
+            SyntaxKind.EqualsToken => "=",
+            SyntaxKind.PlusEqualsToken => "+=",
+            SyntaxKind.MinusEqualsToken => "-=",
+            SyntaxKind.AsteriskEqualsToken => "*=",
+            SyntaxKind.SlashEqualsToken => "/=",
+            SyntaxKind.PercentEqualsToken => "%=",
+            _ => throw new NotSupportedException($"Unsupported assignment operator: {op.Kind()}"),
+        };
     }
 
     static string EmitBinary(BinaryExpressionSyntax bin, EmitContext ctx)
@@ -234,13 +299,15 @@ public static class TranspilerEngine
         var right = EmitExpression(bin.Right, ctx);
 
         // Wrap int32 arithmetic so JS truncating semantics match C#. `*` uses
-        // Math.imul to avoid the float-mantissa overflow at ~2^53.
+        // Math.imul to avoid the float-mantissa overflow at ~2^53. The whole
+        // wrap result is parenthesised because `|` binds looser than `<=` etc.
+        // so `(a + b) | 0 <= c` would mis-parse as `(a + b) | (0 <= c)`.
         if (IsInt32Arithmetic(bin, ctx))
         {
             return op switch
             {
                 "*" => $"Math.imul({left}, {right})",
-                _ => $"({left} {op} {right}) | 0",
+                _ => $"(({left} {op} {right}) | 0)",
             };
         }
 

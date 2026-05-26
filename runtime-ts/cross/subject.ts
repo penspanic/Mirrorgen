@@ -3,7 +3,7 @@ export function FortyTwo(): number {
 }
 
 export function AddSeven(): number {
-  return (35 + 7) | 0;
+  return ((35 + 7) | 0);
 }
 
 export function Ternary(): number {
@@ -23,7 +23,7 @@ export function Pi(): number {
 }
 
 export function AddOne(x: number): number {
-  return (x + 1) | 0;
+  return ((x + 1) | 0);
 }
 
 export function Both(a: boolean, b: boolean): boolean {
@@ -49,4 +49,10 @@ export function Max(a: number, b: number): number {
     return a;
   }
   return b;
+}
+
+export function IsWithinDistance(x1: number, y1: number, x2: number, y2: number, radius: number): boolean {
+  let dx: number = ((x2 - x1) | 0);
+  let dy: number = ((y2 - y1) | 0);
+  return ((Math.imul(dx, dx) + Math.imul(dy, dy)) | 0) <= Math.imul(radius, radius);
 }

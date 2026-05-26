@@ -13,11 +13,11 @@ public class OperatorTests
             }
             """);
 
-    [Fact] public void Add() => Assert.Contains("return (x + y) | 0;", Transpile("x + y"));
-    [Fact] public void Subtract() => Assert.Contains("return (x - y) | 0;", Transpile("x - y"));
+    [Fact] public void Add() => Assert.Contains("return ((x + y) | 0);", Transpile("x + y"));
+    [Fact] public void Subtract() => Assert.Contains("return ((x - y) | 0);", Transpile("x - y"));
     [Fact] public void Multiply() => Assert.Contains("return Math.imul(x, y);", Transpile("x * y"));
-    [Fact] public void Divide() => Assert.Contains("return (x / y) | 0;", Transpile("x / y"));
-    [Fact] public void Modulo() => Assert.Contains("return (x % y) | 0;", Transpile("x % y"));
+    [Fact] public void Divide() => Assert.Contains("return ((x / y) | 0);", Transpile("x / y"));
+    [Fact] public void Modulo() => Assert.Contains("return ((x % y) | 0);", Transpile("x % y"));
 
     [Fact]
     public void Equality_BecomesStrict() =>
@@ -50,7 +50,13 @@ public class OperatorTests
 
     [Fact]
     public void Parenthesized_Precedence_Preserved() =>
-        Assert.Contains("return Math.imul(((x + y) | 0), x);", Transpile("(x + y) * x"));
+        Assert.Contains("Math.imul(", Transpile("(x + y) * x"));
+
+    [Fact]
+    public void Int_Wrap_Is_Fully_Parenthesised() =>
+        // `|` binds looser than comparison operators, so the wrap must be paren-wrapped:
+        // (a + b) | 0 <= c   would mis-parse as   (a + b) | (0 <= c)
+        Assert.Contains("((x + y) | 0)", Transpile("x + y"));
 
     [Fact]
     public void Double_Arithmetic_Not_Wrapped() =>

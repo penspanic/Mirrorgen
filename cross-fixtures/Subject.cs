@@ -47,4 +47,15 @@ public static class Subject
         }
         return b;
     }
+
+    // README hero example: locals + int arithmetic wrap + comparison.
+    // Range is tightened on the test side (int32 squared overflows otherwise);
+    // here we just prove the emit + cross-validation runs end to end.
+    [Transpile, GenerateCrossTest(Samples = 16, Seed = 8)]
+    public static bool IsWithinDistance(int x1, int y1, int x2, int y2, int radius)
+    {
+        int dx = x2 - x1;
+        int dy = y2 - y1;
+        return dx * dx + dy * dy <= radius * radius;
+    }
 }
