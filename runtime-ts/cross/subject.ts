@@ -51,6 +51,10 @@ export function Max(a: number, b: number): number {
   return b;
 }
 
+export function IncTwice(x: number): number {
+  return AddOne(AddOne(x));
+}
+
 export function IsWithinDistance(x1: number, y1: number, x2: number, y2: number, radius: number): boolean {
   let dx: number = ((x2 - x1) | 0);
   let dy: number = ((y2 - y1) | 0);

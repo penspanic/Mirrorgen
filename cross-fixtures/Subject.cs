@@ -48,6 +48,10 @@ public static class Subject
         return b;
     }
 
+    // Composition — IncTwice calls AddOne twice via the [Transpile] -> [Transpile] path.
+    [Transpile, GenerateCrossTest(Samples = 8, Seed = 11)]
+    public static int IncTwice(int x) => AddOne(AddOne(x));
+
     // README hero example: locals + int arithmetic wrap + comparison.
     // Range is tightened on the test side (int32 squared overflows otherwise);
     // here we just prove the emit + cross-validation runs end to end.

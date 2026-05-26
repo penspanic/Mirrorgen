@@ -50,6 +50,9 @@ public static class TranspilerEngine
 
         public ITypeSymbol? LocalTypeOf(VariableDeclaratorSyntax variable) =>
             (_model.GetDeclaredSymbol(variable) as ILocalSymbol)?.Type;
+
+        public IMethodSymbol? InvocationTarget(InvocationExpressionSyntax inv) =>
+            _model.GetSymbolInfo(inv).Symbol as IMethodSymbol;
     }
 
     static readonly Lazy<MetadataReference[]> TrustedReferences = new(BuildTrustedReferences);
@@ -273,9 +276,36 @@ public static class TranspilerEngine
                 return $"{EmitExpression(cond.Condition, ctx)} ? {EmitExpression(cond.WhenTrue, ctx)} : {EmitExpression(cond.WhenFalse, ctx)}";
             case AssignmentExpressionSyntax assign:
                 return $"{EmitExpression(assign.Left, ctx)} {MapAssignmentOperator(assign.OperatorToken)} {EmitExpression(assign.Right, ctx)}";
+            case InvocationExpressionSyntax inv:
+                return EmitInvocation(inv, ctx);
             default:
                 throw new NotSupportedException($"Unsupported expression: {expr.Kind()}");
         }
+    }
+
+    static string EmitInvocation(InvocationExpressionSyntax inv, EmitContext ctx)
+    {
+        var target = ctx.InvocationTarget(inv)
+            ?? throw new NotSupportedException($"Cannot resolve target of invocation '{inv}'.");
+
+        if (!IsTranspileMethodSymbol(target))
+        {
+            throw new NotSupportedException(
+                $"Method '{target.ContainingType?.Name}.{target.Name}' is not marked [Transpile]; calls outside the transpile boundary are not allowed.");
+        }
+
+        var args = string.Join(", ",
+            inv.ArgumentList.Arguments.Select(a => EmitExpression(a.Expression, ctx)));
+        return $"{target.Name}({args})";
+    }
+
+    static bool IsTranspileMethodSymbol(IMethodSymbol method)
+    {
+        foreach (var attr in method.GetAttributes())
+        {
+            if (attr.AttributeClass?.ToDisplayString() == "Mirrorgen.TranspileAttribute") return true;
+        }
+        return false;
     }
 
     static string MapAssignmentOperator(SyntaxToken op)
