@@ -2,6 +2,7 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
 
@@ -14,21 +15,64 @@ public static class TranspilerEngine
     public static string TranspileSource(string csharpSource)
     {
         var tree = CSharpSyntaxTree.ParseText(csharpSource);
-        var root = tree.GetCompilationUnitRoot();
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "MirrorgenInput",
+            syntaxTrees: new[] { tree },
+            references: TrustedReferences.Value,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        var ctx = new EmitContext(compilation.GetSemanticModel(tree));
 
         var sb = new StringBuilder();
         bool first = true;
-        foreach (var method in root.DescendantNodes().OfType<MethodDeclarationSyntax>())
+        foreach (var method in tree.GetCompilationUnitRoot().DescendantNodes().OfType<MethodDeclarationSyntax>())
         {
             if (!HasTranspileAttribute(method)) continue;
             if (!first) sb.AppendLine();
-            sb.Append(TranspileMethod(method));
+            sb.Append(EmitMethod(method, ctx));
             first = false;
         }
         return sb.ToString();
     }
 
-    public static string TranspileMethod(MethodDeclarationSyntax method)
+    sealed class EmitContext
+    {
+        readonly SemanticModel _model;
+        public EmitContext(SemanticModel model) { _model = model; }
+
+        public ITypeSymbol? TypeOf(ExpressionSyntax expr)
+        {
+            var info = _model.GetTypeInfo(expr);
+            return info.Type ?? info.ConvertedType;
+        }
+
+        public bool IsInt32(ExpressionSyntax expr) =>
+            TypeOf(expr)?.SpecialType == SpecialType.System_Int32;
+    }
+
+    static readonly Lazy<MetadataReference[]> TrustedReferences = new(BuildTrustedReferences);
+
+    static MetadataReference[] BuildTrustedReferences()
+    {
+        // TRUSTED_PLATFORM_ASSEMBLIES contains the full BCL the runtime loaded for us
+        // — every reference SemanticModel needs to resolve primitives, string, etc.
+        var tpa = (string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES") ?? string.Empty;
+        var refs = tpa
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Where(File.Exists)
+            .Select(p => (MetadataReference)MetadataReference.CreateFromFile(p))
+            .ToList();
+        // Mirrorgen.Attributes is part of TPA only when we ship as a tool; add it
+        // explicitly so [Mirrorgen.Transpile] resolves either way.
+        var attrPath = typeof(Mirrorgen.TranspileAttribute).Assembly.Location;
+        if (!string.IsNullOrEmpty(attrPath) && File.Exists(attrPath) &&
+            !refs.Any(r => string.Equals(r.Display, attrPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            refs.Add(MetadataReference.CreateFromFile(attrPath));
+        }
+        return refs.ToArray();
+    }
+
+    static string EmitMethod(MethodDeclarationSyntax method, EmitContext ctx)
     {
         var name = method.Identifier.Text;
         var returnType = MapType(method.ReturnType);
@@ -41,7 +85,7 @@ public static class TranspilerEngine
 
         var sb = new StringBuilder();
         sb.Append("export function ").Append(name).Append('(').Append(parameters).Append("): ").Append(returnType).AppendLine(" {");
-        sb.Append(EmitMethodBody(method));
+        sb.Append(EmitMethodBody(method, ctx));
         sb.AppendLine("}");
         return sb.ToString();
     }
@@ -76,35 +120,35 @@ public static class TranspilerEngine
         };
     }
 
-    static string EmitMethodBody(MethodDeclarationSyntax method)
+    static string EmitMethodBody(MethodDeclarationSyntax method, EmitContext ctx)
     {
         if (method.ExpressionBody is { } eb)
         {
-            return $"  return {EmitExpression(eb.Expression)};\n";
+            return $"  return {EmitExpression(eb.Expression, ctx)};\n";
         }
         if (method.Body is { } block)
         {
             var sb = new StringBuilder();
             foreach (var stmt in block.Statements)
             {
-                sb.Append(EmitStatement(stmt));
+                sb.Append(EmitStatement(stmt, ctx));
             }
             return sb.ToString();
         }
         throw new NotSupportedException($"Method '{method.Identifier.Text}' has no body.");
     }
 
-    static string EmitStatement(StatementSyntax stmt)
+    static string EmitStatement(StatementSyntax stmt, EmitContext ctx)
     {
         return stmt switch
         {
             ReturnStatementSyntax { Expression: null } => "  return;\n",
-            ReturnStatementSyntax ret => $"  return {EmitExpression(ret.Expression!)};\n",
+            ReturnStatementSyntax ret => $"  return {EmitExpression(ret.Expression!, ctx)};\n",
             _ => throw new NotSupportedException($"Unsupported statement: {stmt.Kind()}"),
         };
     }
 
-    static string EmitExpression(ExpressionSyntax expr)
+    static string EmitExpression(ExpressionSyntax expr, EmitContext ctx)
     {
         switch (expr)
         {
@@ -113,16 +157,48 @@ public static class TranspilerEngine
             case IdentifierNameSyntax id:
                 return id.Identifier.Text;
             case ParenthesizedExpressionSyntax paren:
-                return $"({EmitExpression(paren.Expression)})";
+                return $"({EmitExpression(paren.Expression, ctx)})";
             case BinaryExpressionSyntax bin:
-                return $"{EmitExpression(bin.Left)} {MapBinaryOperator(bin.OperatorToken)} {EmitExpression(bin.Right)}";
+                return EmitBinary(bin, ctx);
             case PrefixUnaryExpressionSyntax pre:
-                return $"{MapPrefixUnaryOperator(pre.OperatorToken)}{EmitExpression(pre.Operand)}";
+                return $"{MapPrefixUnaryOperator(pre.OperatorToken)}{EmitExpression(pre.Operand, ctx)}";
             case ConditionalExpressionSyntax cond:
-                return $"{EmitExpression(cond.Condition)} ? {EmitExpression(cond.WhenTrue)} : {EmitExpression(cond.WhenFalse)}";
+                return $"{EmitExpression(cond.Condition, ctx)} ? {EmitExpression(cond.WhenTrue, ctx)} : {EmitExpression(cond.WhenFalse, ctx)}";
             default:
                 throw new NotSupportedException($"Unsupported expression: {expr.Kind()}");
         }
+    }
+
+    static string EmitBinary(BinaryExpressionSyntax bin, EmitContext ctx)
+    {
+        var op = MapBinaryOperator(bin.OperatorToken);
+        var left = EmitExpression(bin.Left, ctx);
+        var right = EmitExpression(bin.Right, ctx);
+
+        // Wrap int32 arithmetic so JS truncating semantics match C#. `*` uses
+        // Math.imul to avoid the float-mantissa overflow at ~2^53.
+        if (IsInt32Arithmetic(bin, ctx))
+        {
+            return op switch
+            {
+                "*" => $"Math.imul({left}, {right})",
+                _ => $"({left} {op} {right}) | 0",
+            };
+        }
+
+        return $"{left} {op} {right}";
+    }
+
+    static bool IsInt32Arithmetic(BinaryExpressionSyntax bin, EmitContext ctx)
+    {
+        var k = bin.OperatorToken.Kind();
+        if (k != SyntaxKind.PlusToken && k != SyntaxKind.MinusToken &&
+            k != SyntaxKind.AsteriskToken && k != SyntaxKind.SlashToken &&
+            k != SyntaxKind.PercentToken)
+        {
+            return false;
+        }
+        return ctx.TypeOf(bin)?.SpecialType == SpecialType.System_Int32;
     }
 
     static string MapBinaryOperator(SyntaxToken op)

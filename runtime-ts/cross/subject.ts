@@ -3,7 +3,7 @@ export function FortyTwo(): number {
 }
 
 export function AddSeven(): number {
-  return 35 + 7;
+  return (35 + 7) | 0;
 }
 
 export function Ternary(): number {
@@ -23,7 +23,7 @@ export function Pi(): number {
 }
 
 export function AddOne(x: number): number {
-  return x + 1;
+  return (x + 1) | 0;
 }
 
 export function Both(a: boolean, b: boolean): boolean {

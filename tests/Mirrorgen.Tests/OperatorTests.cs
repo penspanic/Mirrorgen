@@ -13,11 +13,11 @@ public class OperatorTests
             }
             """);
 
-    [Fact] public void Add() => Assert.Contains("return x + y;", Transpile("x + y"));
-    [Fact] public void Subtract() => Assert.Contains("return x - y;", Transpile("x - y"));
-    [Fact] public void Multiply() => Assert.Contains("return x * y;", Transpile("x * y"));
-    [Fact] public void Divide() => Assert.Contains("return x / y;", Transpile("x / y"));
-    [Fact] public void Modulo() => Assert.Contains("return x % y;", Transpile("x % y"));
+    [Fact] public void Add() => Assert.Contains("return (x + y) | 0;", Transpile("x + y"));
+    [Fact] public void Subtract() => Assert.Contains("return (x - y) | 0;", Transpile("x - y"));
+    [Fact] public void Multiply() => Assert.Contains("return Math.imul(x, y);", Transpile("x * y"));
+    [Fact] public void Divide() => Assert.Contains("return (x / y) | 0;", Transpile("x / y"));
+    [Fact] public void Modulo() => Assert.Contains("return (x % y) | 0;", Transpile("x % y"));
 
     [Fact]
     public void Equality_BecomesStrict() =>
@@ -50,7 +50,25 @@ public class OperatorTests
 
     [Fact]
     public void Parenthesized_Precedence_Preserved() =>
-        Assert.Contains("return (x + y) * x;", Transpile("(x + y) * x"));
+        Assert.Contains("return Math.imul(((x + y) | 0), x);", Transpile("(x + y) * x"));
+
+    [Fact]
+    public void Double_Arithmetic_Not_Wrapped() =>
+        Assert.Contains(
+            "return a + b;",
+            Transpile("a + b", returnType: "double", paramList: "double a, double b"));
+
+    [Fact]
+    public void Double_Multiplication_Not_Wrapped() =>
+        Assert.Contains(
+            "return a * b;",
+            Transpile("a * b", returnType: "double", paramList: "double a, double b"));
+
+    [Fact]
+    public void Mixed_Int_And_Double_Promotes_To_Double_No_Wrap() =>
+        Assert.Contains(
+            "return x + 1.5;",
+            Transpile("x + 1.5", returnType: "double", paramList: "int x"));
 
     [Fact]
     public void Bitwise_Operators_PassThrough()

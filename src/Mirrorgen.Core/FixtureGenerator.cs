@@ -107,9 +107,10 @@ public static class FixtureGenerator
 
     static object GenerateArg(Type t, string paramName, string methodName, Random rng)
     {
-        // Ranges kept narrow so cross-language arithmetic stays inside the safe-integer
-        // window — once SemanticModel-driven `| 0` wrapping lands we can widen them.
-        if (t == typeof(int)) return rng.Next(-10_000, 10_001);
+        // int sampling spans the full int32 range: the emitter wraps int arithmetic
+        // with `| 0` / Math.imul so overflow stays wire-equivalent between C# unchecked
+        // and JS. long / other widths stay narrow until they get the same treatment.
+        if (t == typeof(int)) return rng.Next(int.MinValue, int.MaxValue);
         if (t == typeof(long)) return (long)rng.Next(-100_000, 100_001);
         if (t == typeof(short)) return (short)rng.Next(short.MinValue, short.MaxValue + 1);
         if (t == typeof(byte)) return (byte)rng.Next(0, 256);
