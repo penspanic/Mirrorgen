@@ -142,6 +142,10 @@ public static class TranspilerEngine
 
     static string MapType(TypeSyntax type)
     {
+        if (type is ArrayTypeSyntax arr)
+        {
+            return $"{MapType(arr.ElementType)}[]";
+        }
         var s = type.ToString();
         return s switch
         {
@@ -157,6 +161,10 @@ public static class TranspilerEngine
 
     static string MapTypeSymbol(ITypeSymbol type)
     {
+        if (type is IArrayTypeSymbol arr)
+        {
+            return $"{MapTypeSymbol(arr.ElementType)}[]";
+        }
         return type.SpecialType switch
         {
             SpecialType.System_Int32 or SpecialType.System_Int64 or SpecialType.System_Int16
@@ -211,9 +219,75 @@ public static class TranspilerEngine
                 return EmitLocalDeclaration(localDecl, ctx, indent);
             case ExpressionStatementSyntax exprStmt:
                 return $"{indent}{EmitExpression(exprStmt.Expression, ctx)};\n";
+            case ForStatementSyntax forStmt:
+                return EmitForStatement(forStmt, ctx, indent);
+            case ForEachStatementSyntax fe:
+                return EmitForEachStatement(fe, ctx, indent);
             default:
                 throw new NotSupportedException($"Unsupported statement: {stmt.Kind()}");
         }
+    }
+
+    static string EmitForStatement(ForStatementSyntax forStmt, EmitContext ctx, string indent)
+    {
+        var initEmit = EmitForInit(forStmt, ctx);
+        var cond = forStmt.Condition is { } c ? EmitExpression(c, ctx) : string.Empty;
+        var iter = string.Join(", ",
+            forStmt.Incrementors.Select(i => EmitExpression(i, ctx)));
+
+        var sb = new StringBuilder();
+        sb.Append(indent).Append("for (").Append(initEmit).Append("; ").Append(cond).Append("; ").Append(iter).AppendLine(") {");
+        sb.Append(EmitBranchBody(forStmt.Statement, ctx, indent + BodyIndent));
+        sb.Append(indent).AppendLine("}");
+        return sb.ToString();
+    }
+
+    static string EmitForInit(ForStatementSyntax forStmt, EmitContext ctx)
+    {
+        if (forStmt.Declaration is { } decl)
+        {
+            if (decl.Variables.Count != 1)
+            {
+                throw new NotSupportedException("Multi-variable for-loop init is not yet supported.");
+            }
+            var v = decl.Variables[0];
+            string tsType;
+            if (decl.Type.IsVar)
+            {
+                var symbolType = ctx.LocalTypeOf(v)
+                    ?? throw new NotSupportedException($"Cannot resolve type of for-init '{v.Identifier.Text}'.");
+                tsType = MapTypeSymbol(symbolType);
+            }
+            else
+            {
+                tsType = MapType(decl.Type);
+            }
+            var init = v.Initializer is { } i ? $" = {EmitExpression(i.Value, ctx)}" : string.Empty;
+            return $"let {v.Identifier.Text}: {tsType}{init}";
+        }
+        if (forStmt.Initializers.Count > 0)
+        {
+            return string.Join(", ",
+                forStmt.Initializers.Select(i => EmitExpression(i, ctx)));
+        }
+        return string.Empty;
+    }
+
+    static string EmitForEachStatement(ForEachStatementSyntax fe, EmitContext ctx, string indent)
+    {
+        var collectionType = ctx.TypeOf(fe.Expression);
+        if (collectionType is not IArrayTypeSymbol)
+        {
+            throw new NotSupportedException(
+                $"foreach only supports T[] in v0.1; got '{collectionType?.ToDisplayString() ?? "unknown"}'. Move LINQ / List<T> enumeration outside the transpile boundary.");
+        }
+
+        var collection = EmitExpression(fe.Expression, ctx);
+        var sb = new StringBuilder();
+        sb.Append(indent).Append("for (const ").Append(fe.Identifier.Text).Append(" of ").Append(collection).AppendLine(") {");
+        sb.Append(EmitBranchBody(fe.Statement, ctx, indent + BodyIndent));
+        sb.Append(indent).AppendLine("}");
+        return sb.ToString();
     }
 
     static string EmitLocalDeclaration(LocalDeclarationStatementSyntax local, EmitContext ctx, string indent)
@@ -301,6 +375,8 @@ public static class TranspilerEngine
                 return EmitBinary(bin, ctx);
             case PrefixUnaryExpressionSyntax pre:
                 return $"{MapPrefixUnaryOperator(pre.OperatorToken)}{EmitExpression(pre.Operand, ctx)}";
+            case PostfixUnaryExpressionSyntax post:
+                return $"{EmitExpression(post.Operand, ctx)}{MapPostfixUnaryOperator(post.OperatorToken)}";
             case ConditionalExpressionSyntax cond:
                 return $"{EmitExpression(cond.Condition, ctx)} ? {EmitExpression(cond.WhenTrue, ctx)} : {EmitExpression(cond.WhenFalse, ctx)}";
             case AssignmentExpressionSyntax assign:
@@ -420,6 +496,16 @@ public static class TranspilerEngine
             SyntaxKind.ExclamationToken => "!",
             SyntaxKind.TildeToken => "~",
             _ => throw new NotSupportedException($"Unsupported unary operator: {op.Kind()}"),
+        };
+    }
+
+    static string MapPostfixUnaryOperator(SyntaxToken op)
+    {
+        return op.Kind() switch
+        {
+            SyntaxKind.PlusPlusToken => "++",
+            SyntaxKind.MinusMinusToken => "--",
+            _ => throw new NotSupportedException($"Unsupported postfix unary operator: {op.Kind()}"),
         };
     }
 

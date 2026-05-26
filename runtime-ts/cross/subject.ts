@@ -51,6 +51,15 @@ export function Max(a: number, b: number): number {
   return b;
 }
 
+export function SumTo(n: number): number {
+  let top: number = n > 100 ? 100 : (n < 0 ? 0 : n);
+  let sum: number = 0;
+  for (let i: number = 0; i < top; i++) {
+    sum += i;
+  }
+  return sum;
+}
+
 export function Echo(s: string): string {
   return s;
 }

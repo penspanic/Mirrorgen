@@ -48,6 +48,17 @@ public static class Subject
         return b;
     }
 
+    // For-loop demo. n is clamped to [0, 100] so cross-validation samples
+    // (full int32 range) can't trigger million-iteration loops on the JS side.
+    [Transpile, GenerateCrossTest(Samples = 10, Seed = 19)]
+    public static int SumTo(int n)
+    {
+        int top = n > 100 ? 100 : (n < 0 ? 0 : n);
+        int sum = 0;
+        for (int i = 0; i < top; i++) sum += i;
+        return sum;
+    }
+
     // String parameter — exercises the string-sampling path.
     [Transpile, GenerateCrossTest(Samples = 8, Seed = 17)]
     public static string Echo(string s) => s;
