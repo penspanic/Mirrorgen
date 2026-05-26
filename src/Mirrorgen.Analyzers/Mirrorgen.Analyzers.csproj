@@ -21,6 +21,11 @@
         <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
     </ItemGroup>
 
+    <ItemGroup>
+        <AdditionalFiles Include="AnalyzerReleases.Shipped.md" Condition="Exists('AnalyzerReleases.Shipped.md')" />
+        <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+    </ItemGroup>
+
     <Target Name="_AddAnalyzerToPackage">
         <ItemGroup>
             <TfmSpecificPackageFile Include="$(OutputPath)\$(AssemblyName).dll" PackagePath="analyzers/dotnet/cs/" />

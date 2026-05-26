@@ -15,6 +15,9 @@
     <ItemGroup>
         <ProjectReference Include="..\..\src\Mirrorgen.Core\Mirrorgen.Core.csproj" />
         <ProjectReference Include="..\..\src\Mirrorgen.Attributes\Mirrorgen.Attributes.csproj" />
+        <ProjectReference Include="..\..\src\Mirrorgen.Analyzers\Mirrorgen.Analyzers.csproj"
+                          ReferenceOutputAssembly="true"
+                          OutputItemType="" />
     </ItemGroup>
 
 </Project>
