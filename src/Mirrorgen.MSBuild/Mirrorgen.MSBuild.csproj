@@ -7,8 +7,14 @@
         <PackageTags>csharp;typescript;msbuild;mirrorgen</PackageTags>
         <IncludeBuildOutput>false</IncludeBuildOutput>
         <DevelopmentDependency>true</DevelopmentDependency>
-        <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+        <NoPackageAnalysis>true</NoPackageAnalysis>
+        <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_AddMSBuildAssetsToPackage</TargetsForTfmSpecificContentInPackage>
     </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Mirrorgen.Attributes\Mirrorgen.Attributes.csproj" />
+        <ProjectReference Include="..\Mirrorgen.Core\Mirrorgen.Core.csproj" PrivateAssets="all" />
+    </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="Microsoft.Build.Framework" PrivateAssets="all" ExcludeAssets="runtime" />
@@ -16,13 +22,14 @@
     </ItemGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\Mirrorgen.Core\Mirrorgen.Core.csproj" PrivateAssets="all" />
+        <None Include="build\**" Pack="true" PackagePath="build\" />
     </ItemGroup>
 
-    <ItemGroup>
-        <None Include="build\**" Pack="true" PackagePath="build\" />
-        <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="tasks\" Visible="false" />
-        <None Include="$(OutputPath)\Mirrorgen.Core.dll" Pack="true" PackagePath="tasks\" Visible="false" />
-    </ItemGroup>
+    <Target Name="_AddMSBuildAssetsToPackage">
+        <ItemGroup>
+            <TfmSpecificPackageFile Include="$(OutputPath)\$(AssemblyName).dll" PackagePath="tasks/" />
+            <TfmSpecificPackageFile Include="$(OutputPath)\Mirrorgen.Core.dll" PackagePath="tasks/" />
+        </ItemGroup>
+    </Target>
 
 </Project>

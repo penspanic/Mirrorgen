@@ -8,6 +8,7 @@ obj/
 
 # Build / publish output
 artifacts/
+artifacts-*/
 publish/
 out/
 
