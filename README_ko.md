@@ -120,11 +120,15 @@ mirrorgen/
     Mirrorgen.MSBuild/      # MSBuild target wrapper
     Mirrorgen.Cli/          # `dotnet mirrorgen` 도구
   runtime-ts/               # @mirrorgen/runtime npm 패키지
+    cross/                  # cross-validation 용 TS emit + fixture JSON (커밋됨)
+  cross-fixtures/           # cross-validation 흐름이 소비하는 C# subject 메서드
+  scripts/
+    regen-cross.sh          # runtime-ts/cross/{subject.ts,subject.fixtures.json} 재생성
   samples/
     minimal/                # 최소 C# → TS 예제
     pricing-rules/          # 도메인 타입 매핑이 포함된 비자명한 예제
   tests/
-    cross-validation/       # Mirrorgen 이 자체 sample 로 self-validate
+    Mirrorgen.Tests/        # walker / operator / fixture-generator 단위 테스트
   docs/
     CONCEPT.md / CONCEPT_ko.md   # 설계 문서 (영문 / 국문)
     SUBSET.md                    # 정확한 subset spec
