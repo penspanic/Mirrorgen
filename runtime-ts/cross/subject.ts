@@ -33,3 +33,20 @@ export function Both(a: boolean, b: boolean): boolean {
 export function Triple(v: number): number {
   return v * 3;
 }
+
+export function Sign(x: number): number {
+  if (x > 0) {
+    return 1;
+  } else if (x < 0) {
+    return -1;
+  } else {
+    return 0;
+  }
+}
+
+export function Max(a: number, b: number): number {
+  if (a > b) {
+    return a;
+  }
+  return b;
+}

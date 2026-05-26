@@ -120,32 +120,90 @@ public static class TranspilerEngine
         };
     }
 
+    const string BodyIndent = "  ";
+
     static string EmitMethodBody(MethodDeclarationSyntax method, EmitContext ctx)
     {
         if (method.ExpressionBody is { } eb)
         {
-            return $"  return {EmitExpression(eb.Expression, ctx)};\n";
+            return $"{BodyIndent}return {EmitExpression(eb.Expression, ctx)};\n";
         }
         if (method.Body is { } block)
         {
             var sb = new StringBuilder();
             foreach (var stmt in block.Statements)
             {
-                sb.Append(EmitStatement(stmt, ctx));
+                sb.Append(EmitStatement(stmt, ctx, BodyIndent));
             }
             return sb.ToString();
         }
         throw new NotSupportedException($"Method '{method.Identifier.Text}' has no body.");
     }
 
-    static string EmitStatement(StatementSyntax stmt, EmitContext ctx)
+    static string EmitStatement(StatementSyntax stmt, EmitContext ctx, string indent)
     {
-        return stmt switch
+        switch (stmt)
         {
-            ReturnStatementSyntax { Expression: null } => "  return;\n",
-            ReturnStatementSyntax ret => $"  return {EmitExpression(ret.Expression!, ctx)};\n",
-            _ => throw new NotSupportedException($"Unsupported statement: {stmt.Kind()}"),
-        };
+            case ReturnStatementSyntax { Expression: null }:
+                return $"{indent}return;\n";
+            case ReturnStatementSyntax ret:
+                return $"{indent}return {EmitExpression(ret.Expression!, ctx)};\n";
+            case BlockSyntax block:
+                var sb = new StringBuilder();
+                foreach (var inner in block.Statements)
+                {
+                    sb.Append(EmitStatement(inner, ctx, indent));
+                }
+                return sb.ToString();
+            case IfStatementSyntax ifs:
+                return EmitIf(ifs, ctx, indent, leadIndent: true);
+            default:
+                throw new NotSupportedException($"Unsupported statement: {stmt.Kind()}");
+        }
+    }
+
+    static string EmitIf(IfStatementSyntax ifs, EmitContext ctx, string indent, bool leadIndent)
+    {
+        var childIndent = indent + BodyIndent;
+        var sb = new StringBuilder();
+        if (leadIndent) sb.Append(indent);
+        sb.Append("if (").Append(EmitExpression(ifs.Condition, ctx)).AppendLine(") {");
+        sb.Append(EmitBranchBody(ifs.Statement, ctx, childIndent));
+        sb.Append(indent).Append('}');
+
+        if (ifs.Else is { } elseClause)
+        {
+            if (elseClause.Statement is IfStatementSyntax nested)
+            {
+                sb.Append(" else ");
+                sb.Append(EmitIf(nested, ctx, indent, leadIndent: false));
+            }
+            else
+            {
+                sb.AppendLine(" else {");
+                sb.Append(EmitBranchBody(elseClause.Statement, ctx, childIndent));
+                sb.Append(indent).AppendLine("}");
+            }
+        }
+        else
+        {
+            sb.AppendLine();
+        }
+        return sb.ToString();
+    }
+
+    static string EmitBranchBody(StatementSyntax stmt, EmitContext ctx, string indent)
+    {
+        if (stmt is BlockSyntax block)
+        {
+            var sb = new StringBuilder();
+            foreach (var s in block.Statements)
+            {
+                sb.Append(EmitStatement(s, ctx, indent));
+            }
+            return sb.ToString();
+        }
+        return EmitStatement(stmt, ctx, indent);
     }
 
     static string EmitExpression(ExpressionSyntax expr, EmitContext ctx)

@@ -30,4 +30,21 @@ public static class Subject
 
     [Transpile, GenerateCrossTest(Samples = 8, Seed = 3)]
     public static double Triple(double v) => v * 3.0;
+
+    [Transpile, GenerateCrossTest(Samples = 12, Seed = 5)]
+    public static int Sign(int x)
+    {
+        if (x > 0) return 1;
+        else if (x < 0) return -1;
+        else return 0;
+    }
+
+    [Transpile, GenerateCrossTest(Samples = 8, Seed = 6)]
+    public static int Max(int a, int b)
+    {
+        if (a > b) {
+            return a;
+        }
+        return b;
+    }
 }
