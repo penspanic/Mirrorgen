@@ -155,6 +155,127 @@ public class AnalyzerTests
         Assert.DoesNotContain(diags, d => d.Id == SubsetAnalyzer.MG0002Id);
     }
 
+    [Fact]
+    public async Task MG0003_Flags_Ref_Parameter()
+    {
+        var source = """
+            public static class S
+            {
+                [Mirrorgen.Transpile]
+                public static void F(ref int x) { }
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.Contains(diags, d => d.Id == SubsetAnalyzer.MG0003Id);
+    }
+
+    [Fact]
+    public async Task MG0003_Flags_Span_Parameter()
+    {
+        var source = """
+            using System;
+
+            public static class S
+            {
+                [Mirrorgen.Transpile]
+                public static int F(Span<int> xs) => xs.Length;
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.Contains(diags, d => d.Id == SubsetAnalyzer.MG0003Id);
+    }
+
+    [Fact]
+    public async Task MG0003_Ignores_Plain_Parameters()
+    {
+        var source = """
+            public static class S
+            {
+                [Mirrorgen.Transpile]
+                public static int F(int x, bool b) => x;
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.DoesNotContain(diags, d => d.Id == SubsetAnalyzer.MG0003Id);
+    }
+
+    [Fact]
+    public async Task MG0004_Flags_Throw_Statement()
+    {
+        var source = """
+            using System;
+
+            public static class S
+            {
+                [Mirrorgen.Transpile]
+                public static int F(int x) { if (x < 0) throw new ArgumentException(); return x; }
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.Contains(diags, d => d.Id == SubsetAnalyzer.MG0004Id);
+    }
+
+    [Fact]
+    public async Task MG0004_Ignores_Throw_Outside_Transpile_Method()
+    {
+        var source = """
+            using System;
+
+            public static class S
+            {
+                public static int F() { throw new InvalidOperationException(); }
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.DoesNotContain(diags, d => d.Id == SubsetAnalyzer.MG0004Id);
+    }
+
+    [Fact]
+    public async Task MG0005_Flags_Reflection_Invocation()
+    {
+        var source = """
+            using System.Reflection;
+
+            public static class S
+            {
+                [Mirrorgen.Transpile]
+                public static string F() => typeof(S).GetMethod("F")!.Name;
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.Contains(diags, d => d.Id == SubsetAnalyzer.MG0005Id);
+    }
+
+    [Fact]
+    public async Task MG0006_Flags_Inheriting_Declarer()
+    {
+        var source = """
+            public class Base { }
+
+            public class Derived : Base
+            {
+                [Mirrorgen.Transpile]
+                public static int F() => 1;
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.Contains(diags, d => d.Id == SubsetAnalyzer.MG0006Id);
+    }
+
+    [Fact]
+    public async Task MG0006_Ignores_Object_Base()
+    {
+        var source = """
+            public static class S
+            {
+                [Mirrorgen.Transpile]
+                public static int F() => 1;
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.DoesNotContain(diags, d => d.Id == SubsetAnalyzer.MG0006Id);
+    }
+
     static async Task<ImmutableArray<Diagnostic>> GetAnalyzerDiagnostics(string source)
     {
         var tree = CSharpSyntaxTree.ParseText(source);
