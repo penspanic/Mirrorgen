@@ -76,6 +76,85 @@ public class AnalyzerTests
         Assert.DoesNotContain(diags, d => d.Id == SubsetAnalyzer.MG0001Id);
     }
 
+    [Fact]
+    public async Task MG0002_Flags_Async_Modifier()
+    {
+        var source = """
+            using System.Threading.Tasks;
+
+            public static class S
+            {
+                [Mirrorgen.Transpile]
+                public static async Task<int> F() { await Task.Delay(1); return 1; }
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.Contains(diags, d => d.Id == SubsetAnalyzer.MG0002Id && d.GetMessage().Contains("async"));
+    }
+
+    [Fact]
+    public async Task MG0002_Flags_Await_Expression()
+    {
+        var source = """
+            using System.Threading.Tasks;
+
+            public static class S
+            {
+                [Mirrorgen.Transpile]
+                public static async Task F() => await Task.Delay(1);
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.Contains(diags, d => d.Id == SubsetAnalyzer.MG0002Id && d.GetMessage().Contains("await"));
+    }
+
+    [Fact]
+    public async Task MG0002_Flags_Task_Return_Type_Without_Async()
+    {
+        var source = """
+            using System.Threading.Tasks;
+
+            public static class S
+            {
+                [Mirrorgen.Transpile]
+                public static Task<int> F() => Task.FromResult(1);
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.Contains(diags, d => d.Id == SubsetAnalyzer.MG0002Id && d.GetMessage().Contains("Task"));
+    }
+
+    [Fact]
+    public async Task MG0002_Flags_ValueTask_Return_Type()
+    {
+        var source = """
+            using System.Threading.Tasks;
+
+            public static class S
+            {
+                [Mirrorgen.Transpile]
+                public static ValueTask<int> F() => new ValueTask<int>(1);
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.Contains(diags, d => d.Id == SubsetAnalyzer.MG0002Id);
+    }
+
+    [Fact]
+    public async Task MG0002_Ignores_Async_Outside_Transpile_Method()
+    {
+        var source = """
+            using System.Threading.Tasks;
+
+            public static class S
+            {
+                public static async Task<int> F() { await Task.Delay(1); return 1; }
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.DoesNotContain(diags, d => d.Id == SubsetAnalyzer.MG0002Id);
+    }
+
     static async Task<ImmutableArray<Diagnostic>> GetAnalyzerDiagnostics(string source)
     {
         var tree = CSharpSyntaxTree.ParseText(source);

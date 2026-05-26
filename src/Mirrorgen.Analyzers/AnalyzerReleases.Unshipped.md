@@ -6,3 +6,4 @@
 Rule ID | Category         | Severity | Notes
 --------|------------------|----------|------------------------------------------------------------
 MG0001  | Mirrorgen.Subset | Error    | LINQ is not allowed in [Transpile] methods. SubsetAnalyzer.
+MG0002  | Mirrorgen.Subset | Error    | async / await / Task are not allowed in [Transpile] methods. SubsetAnalyzer.
