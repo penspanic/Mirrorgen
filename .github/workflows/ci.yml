@@ -36,7 +36,7 @@ jobs:
         run: dotnet pack Mirrorgen.sln --no-build -c Release -o artifacts
 
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-packages
           path: artifacts/*.nupkg

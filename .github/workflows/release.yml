@@ -41,7 +41,7 @@ jobs:
         run: echo "::notice::NUGET_API_KEY secret not set; skipping nuget.org publish."
 
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-packages
           path: artifacts/*.nupkg
