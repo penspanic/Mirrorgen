@@ -8,6 +8,8 @@ on:
       - 'README_ko.md'
       - 'docs/CONCEPT.md'
       - 'docs/CONCEPT_ko.md'
+      - 'docs/SUBSET.md'
+      - 'docs/SUBSET_ko.md'
 
 jobs:
   bilingual:
@@ -43,5 +45,6 @@ jobs:
 
           check_pair "README.md" "README_ko.md"
           check_pair "docs/CONCEPT.md" "docs/CONCEPT_ko.md"
+          check_pair "docs/SUBSET.md" "docs/SUBSET_ko.md"
 
           echo "All bilingual doc pairs are in sync for this PR."

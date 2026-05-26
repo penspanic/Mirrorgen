@@ -91,54 +91,13 @@ Core 라이브러리만이 실제 일을 합니다. 나머지 프로젝트는 �
 
 ## 부분집합
 
-부분집합을 **type surface** 와 **expression surface** 로 나눕니다. Type surface 는 더 쉬운 절반이고, Mirrorgen 이 기존 type-only generator 의 drop-in superset 으로 동작하는 근거.
+지원되는 type / expression 와 enforce 하는 analyzer id 의 정확한 목록은 **[`SUBSET_ko.md`](SUBSET_ko.md)** 에 있습니다. 이 섹션은 그 근거.
 
-### Type surface (v0.1)
+부분집합은 두 갈래: **type surface** (DTO 모양 — enum, record, primitive, `T[]`, `Dictionary<K,V>` 등) 와 **expression / statement surface** (local, wrap 보존 정수 산술, control flow, `[Transpile]` 메서드 간 호출).
 
-지원:
-- `enum` (int-backed)
-- `record` (positional 또는 property-init)
-- `class` 와 `struct` (get-only / init-only property 만)
-- Primitive: `bool`, `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `long` (BigInt), `float`, `double`, `string`
-- `T[]`, `List<T>`, `IReadOnlyList<T>` (모두 `T[]` 로 emit)
-- `Dictionary<K,V>`, `IReadOnlyDictionary<K,V>` (`Record<K,V>` 로 emit, K 는 string-coercible)
-- `Nullable<T>` (`T | null` 로 emit)
-- Transitive reachability — marked type 에서 도달 가능한 leaf type 은 자체 attribute 불필요
+v0.1 범위 밖: LINQ, async / await / Task, `Span<T>` / ref / unsafe / pointer, `throw`, reflection, inheritance, 생성 이후 mutable collection mutation, generic method, enum constant 이상의 pattern matching.
 
-v0.1 에 지원 안 함:
-- 생성 이후 mutable collection
-- `Tuple<...>` / `ValueTuple` — record 권장
-- 사용자 정의 generic type (v0.3 으로 연기)
-- Inheritance / interface implementation surface
-
-### Expression / statement surface (v0.1)
-
-지원:
-- Local variable (`var`, `int`, `bool`, ...)
-- Integer type 산술 — 올바른 wrap semantic 보존:
-  - `int` → `| 0` 으로 wrap
-  - `uint` → `>>> 0` 으로 wrap
-  - `short` / `ushort` / `byte` / `sbyte` → 명시적 mask 로 wrap
-  - int / uint 곱셈 → `Math.imul` (JS Number 정밀도 손실 회피)
-- Boolean operator, 비교
-- `if` / `else`
-- `for` (C-style), `foreach` (v0.1 에선 `T[]` 만)
-- `switch` statement, `switch` expression (enum 의 constant pattern + type pattern)
-- 같은 프로젝트의 다른 `[Transpile]` 메서드 호출
-- 허용 리스트의 `System.Math.*` / `System.MathF.*` 함수 호출
-- `return`
-
-v0.1 에 지원 안 함:
-- `while`, `do-while` (generated code 에 unbounded loop 를 정말 원하는지 확신 후 v0.2)
-- 모든 형태의 LINQ
-- `goto`
-- `yield return`
-- `using`, `try` / `catch` / `finally`
-- enum constant 이상의 pattern matching
-- 사용자 타입에 대한 operator overloading
-- Generic method
-
-지원 안 되는 기능이 `[Transpile]` 멤버에 적용되면 analyzer 가 안정 diagnostic id (`MG0001` … `MG0099`) 로 보고 — 사용자가 suppress 하거나 지원 대기 가능.
+왜 좁게? Emit 결과가 C# semantic 을 bit 단위로 거울처럼 반사해야 — overflow / 지연 enumeration / 할당 동작 / 예외 의미 등 cross-language edge case 가 새 construct 마다 폭증합니다. Mirrorgen 은 `Mirrorgen.Analyzers` 가 subset 위반을 빌드 시점에 차단하게 (안정된 id `MG0001`–`MG0099`) 두어 — C# 원본에서 silently 벗어나는 TS 가 생성되지 않게 합니다.
 
 ## Attribute surface
 

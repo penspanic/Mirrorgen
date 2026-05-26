@@ -91,54 +91,13 @@ The Core library is the only piece that does real work. The other projects are t
 
 ## The subset
 
-We separate the subset into **type surface** and **expression surface**. Type surface is the easier half and is what allows Mirrorgen to act as a drop-in superset of existing type-only generators.
+The precise list of supported types, expressions, and the analyzer-id mapping that enforces it lives in **[`SUBSET.md`](SUBSET.md)**. This section is the rationale.
 
-### Type surface (v0.1)
+The subset is split in two: **type surface** (DTO shapes — enums, records, primitives, `T[]`, `Dictionary<K,V>`, etc.) and **expression / statement surface** (locals, integer arithmetic with wrap, control flow, calls between `[Transpile]` methods).
 
-Supported:
-- `enum` (int-backed)
-- `record` (positional or property-init)
-- `class` and `struct` with only get-only / init-only properties
-- Primitive types: `bool`, `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `long` (BigInt), `float`, `double`, `string`
-- `T[]`, `List<T>`, `IReadOnlyList<T>` (all emitted as `T[]`)
-- `Dictionary<K,V>`, `IReadOnlyDictionary<K,V>` (emitted as `Record<K,V>` with string-coercible K)
-- `Nullable<T>` (emitted as `T | null`)
-- Transitive reachability — leaf types reached from a marked type don't need their own attribute
+Out of scope in v0.1: LINQ, async / await / Task, `Span<T>` / ref / unsafe / pointers, `throw`, reflection, inheritance, mutable collection mutation, generic methods, pattern matching beyond enum constants.
 
-Not supported in v0.1:
-- Mutable collections beyond construction
-- `Tuple<...>` / `ValueTuple` — encourage records instead
-- Custom generic types defined by user code (deferred to v0.3)
-- Inheritance / interface implementation surface
-
-### Expression / statement surface (v0.1)
-
-Supported:
-- Local variables (`var`, `int`, `bool`, ...)
-- Arithmetic on integer types with correct wrap semantics:
-  - `int` → wrapped with `| 0`
-  - `uint` → wrapped with `>>> 0`
-  - `short` / `ushort` / `byte` / `sbyte` → wrapped with explicit mask
-  - Multiplication on int / uint → `Math.imul` (avoids JS Number precision loss)
-- Boolean operators and comparisons
-- `if` / `else`
-- `for` (C-style), `foreach` (over `T[]` only in v0.1)
-- `switch` statement and `switch` expression (constant patterns and type patterns over enums)
-- Method calls to other `[Transpile]` methods within the same project
-- Method calls to a whitelisted set of `System.Math.*` / `System.MathF.*` functions
-- `return`
-
-Not supported in v0.1:
-- `while`, `do-while` (admitted in v0.2 once we're sure we want unbounded loops in generated code)
-- LINQ in any form
-- `goto`
-- `yield return`
-- `using`, `try` / `catch` / `finally`
-- Pattern matching beyond enum constants
-- Operator overloading on user types
-- Generic methods
-
-Each unsupported feature, when applied to a `[Transpile]` member, is reported by the analyzer with a stable diagnostic id (`MG0001` … `MG0099`) so users can suppress or wait for support.
+Why narrow? The output has to mirror C# semantics bit-for-bit, and every additional construct multiplies the cross-language edge cases (overflow, deferred enumeration, allocation behavior, exception semantics). Mirrorgen leans on `Mirrorgen.Analyzers` to fail subset violations at build time (stable ids `MG0001`–`MG0099`) rather than producing TS that quietly drifts from the C# source.
 
 ## Attribute surface
 
