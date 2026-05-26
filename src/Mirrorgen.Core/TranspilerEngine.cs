@@ -80,7 +80,7 @@ public static class TranspilerEngine
 
     static string EmitMethod(MethodDeclarationSyntax method, EmitContext ctx)
     {
-        var name = method.Identifier.Text;
+        var name = ReadEmitName(method) ?? method.Identifier.Text;
         var returnType = MapType(method.ReturnType);
         var parameters = string.Join(
             ", ",
@@ -102,13 +102,42 @@ public static class TranspilerEngine
         {
             foreach (var attr in list.Attributes)
             {
-                var n = attr.Name.ToString();
-                if (n == "Transpile" || n == "TranspileAttribute") return true;
-                if (n.EndsWith(".Transpile", StringComparison.Ordinal)) return true;
-                if (n.EndsWith(".TranspileAttribute", StringComparison.Ordinal)) return true;
+                if (IsTranspileAttributeSyntax(attr)) return true;
             }
         }
         return false;
+    }
+
+    static bool IsTranspileAttributeSyntax(AttributeSyntax attr)
+    {
+        var n = attr.Name.ToString();
+        return n == "Transpile" || n == "TranspileAttribute" ||
+               n.EndsWith(".Transpile", StringComparison.Ordinal) ||
+               n.EndsWith(".TranspileAttribute", StringComparison.Ordinal);
+    }
+
+    static string? ReadEmitName(MethodDeclarationSyntax method)
+    {
+        foreach (var list in method.AttributeLists)
+        {
+            foreach (var attr in list.Attributes)
+            {
+                if (!IsTranspileAttributeSyntax(attr)) continue;
+                if (attr.ArgumentList is null) continue;
+
+                foreach (var arg in attr.ArgumentList.Arguments)
+                {
+                    if (arg.NameEquals?.Name.Identifier.Text != "EmitName") continue;
+                    if (arg.Expression is LiteralExpressionSyntax lit &&
+                        lit.Token.IsKind(SyntaxKind.StringLiteralToken))
+                    {
+                        var value = lit.Token.ValueText;
+                        return string.IsNullOrEmpty(value) ? null : value;
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     static string MapType(TypeSyntax type)
