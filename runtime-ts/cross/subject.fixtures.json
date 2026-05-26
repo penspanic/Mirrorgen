@@ -52,5 +52,170 @@
         "expected": 3.14
       }
     ]
+  },
+  {
+    "name": "AddOne",
+    "calls": [
+      {
+        "args": [
+          -5027
+        ],
+        "expected": -5026
+      },
+      {
+        "args": [
+          -7786
+        ],
+        "expected": -7785
+      },
+      {
+        "args": [
+          -660
+        ],
+        "expected": -659
+      },
+      {
+        "args": [
+          5432
+        ],
+        "expected": 5433
+      },
+      {
+        "args": [
+          3151
+        ],
+        "expected": 3152
+      },
+      {
+        "args": [
+          -1344
+        ],
+        "expected": -1343
+      },
+      {
+        "args": [
+          -2918
+        ],
+        "expected": -2917
+      },
+      {
+        "args": [
+          8878
+        ],
+        "expected": 8879
+      },
+      {
+        "args": [
+          -7975
+        ],
+        "expected": -7974
+      },
+      {
+        "args": [
+          2849
+        ],
+        "expected": 2850
+      }
+    ]
+  },
+  {
+    "name": "Both",
+    "calls": [
+      {
+        "args": [
+          false,
+          true
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          true,
+          false
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          true,
+          true
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          false,
+          true
+        ],
+        "expected": false
+      },
+      {
+        "args": [
+          true,
+          true
+        ],
+        "expected": true
+      },
+      {
+        "args": [
+          false,
+          true
+        ],
+        "expected": false
+      }
+    ]
+  },
+  {
+    "name": "Triple",
+    "calls": [
+      {
+        "args": [
+          -41.29615749292827
+        ],
+        "expected": -123.88847247878482
+      },
+      {
+        "args": [
+          39.516242472229635
+        ],
+        "expected": 118.5487274166889
+      },
+      {
+        "args": [
+          72.99733216548213
+        ],
+        "expected": 218.9919964964464
+      },
+      {
+        "args": [
+          -60.30200336142536
+        ],
+        "expected": -180.9060100842761
+      },
+      {
+        "args": [
+          12.098074663476126
+        ],
+        "expected": 36.29422399042838
+      },
+      {
+        "args": [
+          -63.88435706677118
+        ],
+        "expected": -191.65307120031355
+      },
+      {
+        "args": [
+          -49.96056824455064
+        ],
+        "expected": -149.88170473365193
+      },
+      {
+        "args": [
+          89.44621635109476
+        ],
+        "expected": 268.33864905328426
+      }
+    ]
   }
 ]

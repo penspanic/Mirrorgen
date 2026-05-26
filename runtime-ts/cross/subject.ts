@@ -21,3 +21,15 @@ export function Greeting(): string {
 export function Pi(): number {
   return 3.14;
 }
+
+export function AddOne(x: number): number {
+  return x + 1;
+}
+
+export function Both(a: boolean, b: boolean): boolean {
+  return a && b;
+}
+
+export function Triple(v: number): number {
+  return v * 3;
+}
