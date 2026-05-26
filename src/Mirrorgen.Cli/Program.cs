@@ -58,13 +58,25 @@ static int RunTranspile(ReadOnlySpan<string> rest)
 
     if (inputPath is null)
     {
-        Console.Error.WriteLine("transpile: missing input file.");
+        Console.Error.WriteLine("transpile: missing input file or directory.");
         return 2;
+    }
+
+    if (Directory.Exists(inputPath))
+    {
+        if (outputPath is null)
+        {
+            Console.Error.WriteLine("transpile: -o <out-dir> is required when input is a directory.");
+            return 2;
+        }
+        var result = BatchTranspiler.TranspileDirectory(inputPath, outputPath);
+        Console.Out.WriteLine($"transpile: wrote {result.WrittenCount} file(s), skipped {result.SkippedCount} file(s) with no [Transpile] members.");
+        return 0;
     }
 
     if (!File.Exists(inputPath))
     {
-        Console.Error.WriteLine($"File not found: {inputPath}");
+        Console.Error.WriteLine($"Input not found: {inputPath}");
         return 1;
     }
 
@@ -148,6 +160,7 @@ static void PrintUsage()
     Console.WriteLine();
     Console.WriteLine("Usage:");
     Console.WriteLine("  mirrorgen transpile <file.cs> [-o <out.ts>]");
+    Console.WriteLine("  mirrorgen transpile <dir>     -o <out-dir>");
     Console.WriteLine("  mirrorgen fixtures <assembly.dll> [-o <out.json>]");
     Console.WriteLine("  mirrorgen --version");
     Console.WriteLine("  mirrorgen --help");
