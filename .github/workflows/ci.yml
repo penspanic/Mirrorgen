@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dotnet:
+    name: .NET build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # MinVer needs full history for version computation
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore Mirrorgen.sln
+
+      - name: Build
+        run: dotnet build Mirrorgen.sln --no-restore -c Release
+
+      - name: Test
+        run: dotnet test Mirrorgen.sln --no-build -c Release --verbosity normal
+
+      - name: Pack (verify packaging)
+        run: dotnet pack Mirrorgen.sln --no-build -c Release -o artifacts
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: artifacts/*.nupkg
+          if-no-files-found: error
+          retention-days: 14
+
+  runtime-ts:
+    name: runtime-ts build + test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: runtime-ts
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: runtime-ts/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm test

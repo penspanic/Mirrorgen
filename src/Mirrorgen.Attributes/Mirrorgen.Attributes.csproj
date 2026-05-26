@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>netstandard2.0</TargetFramework>
+        <PackageId>Mirrorgen.Attributes</PackageId>
+        <Description>Attributes consumed by Mirrorgen to mark C# types and methods for TypeScript transpilation. Zero runtime dependencies.</Description>
+        <PackageTags>csharp;typescript;transpile;attributes;mirrorgen</PackageTags>
+    </PropertyGroup>
+
+</Project>

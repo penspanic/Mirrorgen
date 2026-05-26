@@ -1,0 +1,7 @@
+<Project>
+
+    <PropertyGroup>
+        <MirrorgenTasksAssembly>$(MSBuildThisFileDirectory)..\tasks\Mirrorgen.MSBuild.dll</MirrorgenTasksAssembly>
+    </PropertyGroup>
+
+</Project>

@@ -1,0 +1,35 @@
+{
+    "name": "@mirrorgen/runtime",
+    "version": "0.0.1-alpha.0",
+    "description": "Runtime helpers consumed by Mirrorgen-emitted TypeScript code.",
+    "type": "module",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "files": [
+        "dist",
+        "README.md"
+    ],
+    "scripts": {
+        "build": "tsc",
+        "test": "vitest run",
+        "watch": "tsc --watch"
+    },
+    "devDependencies": {
+        "typescript": "^5.6.0",
+        "vitest": "^2.1.0"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/penspanic/Mirrorgen.git",
+        "directory": "runtime-ts"
+    },
+    "homepage": "https://github.com/penspanic/Mirrorgen#readme",
+    "bugs": {
+        "url": "https://github.com/penspanic/Mirrorgen/issues"
+    },
+    "license": "MIT",
+    "author": "penspanic",
+    "publishConfig": {
+        "access": "public"
+    }
+}

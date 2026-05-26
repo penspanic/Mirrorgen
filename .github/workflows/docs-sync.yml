@@ -1,0 +1,47 @@
+name: Docs sync (en/ko)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'README.md'
+      - 'README_ko.md'
+      - 'docs/CONCEPT.md'
+      - 'docs/CONCEPT_ko.md'
+
+jobs:
+  bilingual:
+    name: en/ko must be touched together
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify paired docs changed together
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -e
+          changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          echo "Changed files:"
+          echo "$changed"
+
+          check_pair() {
+            local en="$1"
+            local ko="$2"
+            local en_changed=0
+            local ko_changed=0
+            grep -qxF "$en" <<< "$changed" && en_changed=1 || true
+            grep -qxF "$ko" <<< "$changed" && ko_changed=1 || true
+            if [ "$en_changed" != "$ko_changed" ]; then
+              echo "::error::'$en' and '$ko' must be updated in the same PR (CONTRIBUTING.md)."
+              return 1
+            fi
+          }
+
+          check_pair "README.md" "README_ko.md"
+          check_pair "docs/CONCEPT.md" "docs/CONCEPT_ko.md"
+
+          echo "All bilingual doc pairs are in sync for this PR."

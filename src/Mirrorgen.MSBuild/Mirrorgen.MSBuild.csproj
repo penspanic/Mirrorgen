@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <PackageId>Mirrorgen.MSBuild</PackageId>
+        <Description>MSBuild target that runs the Mirrorgen transpiler during project build.</Description>
+        <PackageTags>csharp;typescript;msbuild;mirrorgen</PackageTags>
+        <IncludeBuildOutput>false</IncludeBuildOutput>
+        <DevelopmentDependency>true</DevelopmentDependency>
+        <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.Build.Framework" PrivateAssets="all" ExcludeAssets="runtime" />
+        <PackageReference Include="Microsoft.Build.Utilities.Core" PrivateAssets="all" ExcludeAssets="runtime" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Mirrorgen.Core\Mirrorgen.Core.csproj" PrivateAssets="all" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="build\**" Pack="true" PackagePath="build\" />
+        <None Include="$(OutputPath)\$(AssemblyName).dll" Pack="true" PackagePath="tasks\" Visible="false" />
+        <None Include="$(OutputPath)\Mirrorgen.Core.dll" Pack="true" PackagePath="tasks\" Visible="false" />
+    </ItemGroup>
+
+</Project>

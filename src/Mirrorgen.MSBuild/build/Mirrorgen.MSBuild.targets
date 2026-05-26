@@ -1,0 +1,9 @@
+<Project>
+
+    <UsingTask TaskName="Mirrorgen.MSBuild.MirrorgenTask" AssemblyFile="$(MirrorgenTasksAssembly)" />
+
+    <Target Name="MirrorgenGenerate" BeforeTargets="CoreCompile">
+        <MirrorgenTask />
+    </Target>
+
+</Project>

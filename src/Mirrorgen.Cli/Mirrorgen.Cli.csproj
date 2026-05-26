@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net8.0</TargetFramework>
+        <PackageId>Mirrorgen.Cli</PackageId>
+        <Description>Command-line entry point for the Mirrorgen transpiler. Installed as a global or local dotnet tool.</Description>
+        <PackageTags>csharp;typescript;cli;dotnet-tool;mirrorgen</PackageTags>
+        <PackAsTool>true</PackAsTool>
+        <ToolCommandName>mirrorgen</ToolCommandName>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\Mirrorgen.Core\Mirrorgen.Core.csproj" />
+    </ItemGroup>
+
+</Project>
