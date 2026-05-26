@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
+        <RootNamespace>Mirrorgen.CrossFixtures</RootNamespace>
+        <AssemblyName>Mirrorgen.CrossFixtures</AssemblyName>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\src\Mirrorgen.Attributes\Mirrorgen.Attributes.csproj" />
+    </ItemGroup>
+
+</Project>

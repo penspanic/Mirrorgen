@@ -1,0 +1,56 @@
+[
+  {
+    "name": "FortyTwo",
+    "calls": [
+      {
+        "args": [],
+        "expected": 42
+      }
+    ]
+  },
+  {
+    "name": "AddSeven",
+    "calls": [
+      {
+        "args": [],
+        "expected": 42
+      }
+    ]
+  },
+  {
+    "name": "Ternary",
+    "calls": [
+      {
+        "args": [],
+        "expected": 10
+      }
+    ]
+  },
+  {
+    "name": "StrictEquality",
+    "calls": [
+      {
+        "args": [],
+        "expected": true
+      }
+    ]
+  },
+  {
+    "name": "Greeting",
+    "calls": [
+      {
+        "args": [],
+        "expected": "hi"
+      }
+    ]
+  },
+  {
+    "name": "Pi",
+    "calls": [
+      {
+        "args": [],
+        "expected": 3.14
+      }
+    ]
+  }
+]

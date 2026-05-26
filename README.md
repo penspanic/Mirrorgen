@@ -120,11 +120,15 @@ mirrorgen/
     Mirrorgen.MSBuild/      # MSBuild target wrapper
     Mirrorgen.Cli/          # `dotnet mirrorgen` tool
   runtime-ts/               # @mirrorgen/runtime npm package
+    cross/                  # checked-in TS emit + fixture JSON for cross-validation
+  cross-fixtures/           # C# subject methods consumed by the cross-validation flow
+  scripts/
+    regen-cross.sh          # rebuilds runtime-ts/cross/{subject.ts,subject.fixtures.json}
   samples/
     minimal/                # smallest possible C# -> TS example
     pricing-rules/          # non-trivial sample with domain-type mapping
   tests/
-    cross-validation/       # Mirrorgen self-validates against its own samples
+    Mirrorgen.Tests/        # walker / operator / fixture-generator unit tests
   docs/
     CONCEPT.md              # this is where the design lives
     SUBSET.md               # exact subset spec
