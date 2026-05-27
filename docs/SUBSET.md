@@ -14,7 +14,7 @@ Supported:
 - `enum` (int-backed)
 - `record` (positional or property-init)
 - `class` and `struct` with properties (get-only, init-only, or `get; set;`) and public fields
-- Primitive types: `bool`, `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `float`, `double`, `string`
+- Primitive types: `bool`, `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `float`, `double`, `string`, `long` / `ulong` (emit as TS `bigint` with `BigInt.asIntN(64, ...)` / `asUintN(64, ...)` wrap)
 - `T[]`, `List<T>`, `IReadOnlyList<T>`, `IList<T>` (all emitted as `T[]`)
 - `Dictionary<K,V>`, `IReadOnlyDictionary<K,V>`, `IDictionary<K,V>` (emitted as `Record<K,V>` with string-coercible K)
 - `Nullable<T>` (emitted as `T | null`)
@@ -22,7 +22,6 @@ Supported:
 - Plugin remapping (`IMirrorgenExtension`) — a single user-defined plugin can map a C# domain primitive (e.g. `record OrderId(int Value)`) onto a TS primitive or a runtime-imported name. Mapped types are never emitted; their fixture values are unwrapped to the inner field.
 
 Not supported in v0.1:
-- 64-bit integers (`long`, `ulong`) — would lose precision above 2^53 as a JS Number. BigInt emission is deferred to v0.2; for now the walker rejects them.
 - Mutable collections beyond construction
 - `Tuple<...>` / `ValueTuple` — encourage records instead
 - Custom generic types defined by user code (deferred to v0.3)

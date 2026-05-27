@@ -259,6 +259,12 @@ public static class TranspilerEngine
         public bool IsInt32(ExpressionSyntax expr) =>
             TypeOf(expr)?.SpecialType == SpecialType.System_Int32;
 
+        public bool IsInt64(ExpressionSyntax expr) =>
+            TypeOf(expr)?.SpecialType == SpecialType.System_Int64;
+
+        public bool IsUInt64(ExpressionSyntax expr) =>
+            TypeOf(expr)?.SpecialType == SpecialType.System_UInt64;
+
         public ITypeSymbol? LocalTypeOf(VariableDeclaratorSyntax variable) =>
             (_model.GetDeclaredSymbol(variable) as ILocalSymbol)?.Type;
 
@@ -519,11 +525,7 @@ public static class TranspilerEngine
             "bool" => "boolean",
             "string" => "string",
             "void" => "void",
-            // 64-bit integers don't fit safely in a JS Number above 2^53.
-            // BigInt emission is queued for v0.2 — for now, refuse to emit
-            // rather than silently lose precision.
-            "long" or "ulong"
-                => throw new NotSupportedException($"64-bit integer type '{s}' is not supported in v0.1 (would lose precision as a JS Number above 2^53). Convert at the transpile boundary or wait for v0.2 BigInt support."),
+            "long" or "ulong" => "bigint",
             "decimal" or "char" or "object" or "dynamic"
                 => throw new NotSupportedException($"Unsupported primitive type: {s}"),
             // Unknown identifier — assume it's a reference to another transpiled
@@ -580,8 +582,7 @@ public static class TranspilerEngine
             SpecialType.System_Boolean => "boolean",
             SpecialType.System_String => "string",
             SpecialType.System_Void => "void",
-            SpecialType.System_Int64 or SpecialType.System_UInt64
-                => throw new NotSupportedException($"64-bit integer type '{type.Name}' is not supported in v0.1 (precision loss above 2^53). Wait for v0.2 BigInt support."),
+            SpecialType.System_Int64 or SpecialType.System_UInt64 => "bigint",
             // Same fallback as MapType: assume reference to another transpiled type.
             _ => type.Name,
         };
@@ -1363,6 +1364,24 @@ public static class TranspilerEngine
             };
             return $"{left} = {combined}";
         }
+        // long / ulong compound assignment — BigInt.asIntN / asUintN wrap to
+        // mimic the 64-bit C# overflow semantics.
+        if (op != SyntaxKind.EqualsToken && (ctx.IsInt64(assign.Left) || ctx.IsUInt64(assign.Left)))
+        {
+            var left = EmitExpression(assign.Left, ctx);
+            var right = EmitExpression(assign.Right, ctx);
+            var wrap = ctx.IsInt64(assign.Left) ? "BigInt.asIntN(64" : "BigInt.asUintN(64";
+            string binaryOp = op switch
+            {
+                SyntaxKind.PlusEqualsToken => "+",
+                SyntaxKind.MinusEqualsToken => "-",
+                SyntaxKind.AsteriskEqualsToken => "*",
+                SyntaxKind.SlashEqualsToken => "/",
+                SyntaxKind.PercentEqualsToken => "%",
+                _ => throw new NotSupportedException($"Unsupported compound assignment: {op}"),
+            };
+            return $"{left} = {wrap}, {left} {binaryOp} {right})";
+        }
         return $"{EmitExpression(assign.Left, ctx)} {MapAssignmentOperator(assign.OperatorToken)} {EmitExpression(assign.Right, ctx)}";
     }
 
@@ -1385,8 +1404,32 @@ public static class TranspilerEngine
             };
         }
 
+        // long / ulong → BigInt arithmetic with explicit asIntN(64) /
+        // asUintN(64) wrap so a JS bigint mirrors C# unchecked semantics on
+        // overflow. JS bigint is arbitrary-precision otherwise, so the wrap
+        // is the only thing that constrains it back to 64-bit.
+        if (IsInt64Arithmetic(bin, ctx))
+        {
+            return $"BigInt.asIntN(64, {left} {op} {right})";
+        }
+        if (IsUInt64Arithmetic(bin, ctx))
+        {
+            return $"BigInt.asUintN(64, {left} {op} {right})";
+        }
+
         return $"{left} {op} {right}";
     }
+
+    static bool IsInt64Arithmetic(BinaryExpressionSyntax bin, EmitContext ctx) =>
+        IsIntegerArithmeticOperator(bin.OperatorToken.Kind()) && ctx.IsInt64(bin);
+
+    static bool IsUInt64Arithmetic(BinaryExpressionSyntax bin, EmitContext ctx) =>
+        IsIntegerArithmeticOperator(bin.OperatorToken.Kind()) && ctx.IsUInt64(bin);
+
+    static bool IsIntegerArithmeticOperator(SyntaxKind k) =>
+        k is SyntaxKind.PlusToken or SyntaxKind.MinusToken
+          or SyntaxKind.AsteriskToken or SyntaxKind.SlashToken
+          or SyntaxKind.PercentToken;
 
     static bool IsInt32Arithmetic(BinaryExpressionSyntax bin, EmitContext ctx)
     {
@@ -1453,9 +1496,16 @@ public static class TranspilerEngine
         switch (lit.Token.Kind())
         {
             case SyntaxKind.NumericLiteralToken:
-                var v = lit.Token.Value
-                    ?? throw new NotSupportedException("Numeric literal has no value.");
-                return v is IFormattable f ? f.ToString(null, CultureInfo.InvariantCulture) : v.ToString()!;
+                {
+                    var v = lit.Token.Value
+                        ?? throw new NotSupportedException("Numeric literal has no value.");
+                    // `5L` / `5UL` literals emit as TS bigint literals (`5n`).
+                    if (v is long or ulong)
+                    {
+                        return $"{((IFormattable)v).ToString(null, CultureInfo.InvariantCulture)}n";
+                    }
+                    return v is IFormattable f ? f.ToString(null, CultureInfo.InvariantCulture) : v.ToString()!;
+                }
             case SyntaxKind.StringLiteralToken:
                 return lit.Token.Text;
             case SyntaxKind.TrueKeyword:
