@@ -24,10 +24,11 @@
     <Target Name="MirrorgenGenerate"
             AfterTargets="Build"
             Condition="'$(MirrorgenOutput)' != ''"
-            Inputs="@(Compile);$(TargetPath)"
+            Inputs="@(Compile);@(MirrorgenAdditionalSource);$(TargetPath)"
             Outputs="$(IntermediateOutputPath)mirrorgen.stamp">
         <MakeDir Directories="$(IntermediateOutputPath)" />
         <MirrorgenTask Sources="@(Compile)"
+                       AdditionalSources="@(MirrorgenAdditionalSource)"
                        SourceRoot="$(MirrorgenSourceRoot)"
                        OutputDirectory="$(MirrorgenOutput)"
                        AssemblyPath="$(TargetPath)"

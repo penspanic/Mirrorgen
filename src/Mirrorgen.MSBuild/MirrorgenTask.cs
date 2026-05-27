@@ -14,6 +14,14 @@ public sealed class MirrorgenTask : Microsoft.Build.Utilities.Task
     [Required]
     public ITaskItem[] Sources { get; set; } = Array.Empty<ITaskItem>();
 
+    /// <summary>
+    /// Extra .cs files to include in the Mirrorgen scan without contributing to
+    /// the host project's @(Compile). Lets one csproj aggregate-emit DTOs
+    /// declared in sibling csprojs (e.g. Networking.WebServices) without
+    /// double-compiling those sources into the host assembly.
+    /// </summary>
+    public ITaskItem[] AdditionalSources { get; set; } = Array.Empty<ITaskItem>();
+
     [Required]
     public string SourceRoot { get; set; } = string.Empty;
 
@@ -45,6 +53,10 @@ public sealed class MirrorgenTask : Microsoft.Build.Utilities.Task
         {
             var registry = LoadRegistry();
             var files = Sources.Select(item => item.GetMetadata("FullPath")).ToList();
+            if (AdditionalSources.Length > 0)
+            {
+                files.AddRange(AdditionalSources.Select(item => item.GetMetadata("FullPath")));
+            }
             var options = string.IsNullOrEmpty(AggregateOutputFile)
                 ? TranspileOptions.Default
                 : new TranspileOptions { AggregateOutputFile = AggregateOutputFile };
