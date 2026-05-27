@@ -1,0 +1,13 @@
+{
+    "name": "@mirrorgen-samples/minimal-client",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "scripts": {
+        "test": "vitest run"
+    },
+    "devDependencies": {
+        "typescript": "^6.0.3",
+        "vitest": "^4.1.7"
+    }
+}

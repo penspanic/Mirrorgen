@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
+        <RootNamespace>Mirrorgen.Samples.Minimal</RootNamespace>
+        <AssemblyName>Mirrorgen.Samples.Minimal.Rules</AssemblyName>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\src\Mirrorgen.Attributes\Mirrorgen.Attributes.csproj" />
+    </ItemGroup>
+
+    <!--
+      The Mirrorgen.Analyzers project would normally be wired in as
+      <OutputItemType="Analyzer" ReferenceOutputAssembly="false"/> so the
+      subset is enforced at compile time. It targets Roslyn 5.x, however,
+      and the currently pinned .NET SDK ships an older csc that refuses to
+      load it. The wiring will switch back on once the SDK catches up.
+    -->
+
+
+</Project>
