@@ -553,6 +553,26 @@ public static class TranspilerEngine
                 return EmitForEachStatement(fe, ctx, indent);
             case SwitchStatementSyntax sw:
                 return EmitSwitchStatement(sw, ctx, indent);
+            case WhileStatementSyntax ws:
+                {
+                    var w = new StringBuilder();
+                    w.Append(indent).Append("while (").Append(EmitExpression(ws.Condition, ctx)).AppendLine(") {");
+                    w.Append(EmitBranchBody(ws.Statement, ctx, indent + BodyIndent));
+                    w.Append(indent).AppendLine("}");
+                    return w.ToString();
+                }
+            case DoStatementSyntax ds:
+                {
+                    var d = new StringBuilder();
+                    d.Append(indent).AppendLine("do {");
+                    d.Append(EmitBranchBody(ds.Statement, ctx, indent + BodyIndent));
+                    d.Append(indent).Append("} while (").Append(EmitExpression(ds.Condition, ctx)).AppendLine(");");
+                    return d.ToString();
+                }
+            case BreakStatementSyntax:
+                return $"{indent}break;\n";
+            case ContinueStatementSyntax:
+                return $"{indent}continue;\n";
             default:
                 throw new NotSupportedException($"Unsupported statement: {stmt.Kind()}");
         }
@@ -664,21 +684,32 @@ public static class TranspilerEngine
     static string EmitSwitchExpression(SwitchExpressionSyntax swx, EmitContext ctx)
     {
         // C# switch expressions don't have a TS counterpart — emit a self-
-        // calling arrow that branches with if-returns. This preserves the
-        // expression context the caller is in.
+        // calling arrow that branches with if-returns over a captured copy of
+        // the governing expression. The capture avoids re-evaluating side
+        // effects across arms.
         var governing = EmitExpression(swx.GoverningExpression, ctx);
         var sb = new StringBuilder();
         sb.Append("((): ").Append(InferSwitchExpressionResultType(swx, ctx)).Append(" => { ");
+        sb.Append("const _v = ").Append(governing).Append("; ");
         foreach (var arm in swx.Arms)
         {
-            if (arm.Pattern is DiscardPatternSyntax)
+            string cond = arm.Pattern is DiscardPatternSyntax
+                ? "true"
+                : EmitPatternCondition(arm.Pattern, "_v", ctx);
+            if (arm.WhenClause is { } when)
+            {
+                var guard = EmitExpression(when.Condition, ctx);
+                cond = cond == "true" ? guard : $"({cond}) && ({guard})";
+            }
+            if (cond == "true")
             {
                 sb.Append("return ").Append(EmitExpression(arm.Expression, ctx)).Append("; ");
-                continue;
             }
-            sb.Append("if (").Append(governing).Append(" === ")
-              .Append(EmitSwitchPattern(arm.Pattern, ctx)).Append(") return ")
-              .Append(EmitExpression(arm.Expression, ctx)).Append("; ");
+            else
+            {
+                sb.Append("if (").Append(cond).Append(") return ")
+                  .Append(EmitExpression(arm.Expression, ctx)).Append("; ");
+            }
         }
         // Fall-through guard — C# would throw SwitchExpressionException at
         // runtime if no arm matched. Mirror that loudly so silent undefined
@@ -686,6 +717,39 @@ public static class TranspilerEngine
         sb.Append("throw new Error(\"switch expression: no arm matched\"); })()");
         return sb.ToString();
     }
+
+    static string EmitPatternCondition(PatternSyntax pattern, string governingVar, EmitContext ctx)
+    {
+        switch (pattern)
+        {
+            case ConstantPatternSyntax cp:
+                return $"{governingVar} === {EmitExpression(cp.Expression, ctx)}";
+            case RelationalPatternSyntax rp:
+                return $"{governingVar} {MapRelationalPatternOperator(rp.OperatorToken)} {EmitExpression(rp.Expression, ctx)}";
+            case ParenthesizedPatternSyntax pp:
+                return $"({EmitPatternCondition(pp.Pattern, governingVar, ctx)})";
+            case BinaryPatternSyntax bp when bp.IsKind(SyntaxKind.AndPattern):
+                return $"({EmitPatternCondition(bp.Left, governingVar, ctx)} && {EmitPatternCondition(bp.Right, governingVar, ctx)})";
+            case BinaryPatternSyntax bp when bp.IsKind(SyntaxKind.OrPattern):
+                return $"({EmitPatternCondition(bp.Left, governingVar, ctx)} || {EmitPatternCondition(bp.Right, governingVar, ctx)})";
+            case DiscardPatternSyntax:
+                return "true";
+            default:
+                throw new NotSupportedException(
+                    $"Unsupported switch pattern '{pattern.Kind()}'. Supported: constant, relational, parenthesised, and/or composites, discard (with optional `when` guards).");
+        }
+    }
+
+    static string MapRelationalPatternOperator(SyntaxToken token) => token.Kind() switch
+    {
+        SyntaxKind.GreaterThanToken => ">",
+        SyntaxKind.GreaterThanEqualsToken => ">=",
+        SyntaxKind.LessThanToken => "<",
+        SyntaxKind.LessThanEqualsToken => "<=",
+        SyntaxKind.EqualsEqualsToken => "===",
+        SyntaxKind.ExclamationEqualsToken => "!==",
+        _ => throw new NotSupportedException($"Unsupported relational pattern operator: {token.Kind()}"),
+    };
 
     static string InferSwitchExpressionResultType(SwitchExpressionSyntax swx, EmitContext ctx)
     {

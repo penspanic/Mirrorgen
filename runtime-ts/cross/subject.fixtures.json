@@ -1023,5 +1023,147 @@
         "expected": "zero"
       }
     ]
+  },
+  {
+    "name": "CountDownToZero",
+    "calls": [
+      {
+        "args": [
+          760535772
+        ],
+        "expected": 200
+      },
+      {
+        "args": [
+          729471037
+        ],
+        "expected": 200
+      },
+      {
+        "args": [
+          -1820279871
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          -969834967
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          948366068
+        ],
+        "expected": 200
+      },
+      {
+        "args": [
+          1976460340
+        ],
+        "expected": 200
+      },
+      {
+        "args": [
+          -1892553118
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          1248468594
+        ],
+        "expected": 200
+      },
+      {
+        "args": [
+          -1358120453
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          -934481735
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          1153806410
+        ],
+        "expected": 200
+      },
+      {
+        "args": [
+          1554869353
+        ],
+        "expected": 200
+      }
+    ]
+  },
+  {
+    "name": "FirstNonNegativeStep",
+    "calls": [
+      {
+        "args": [
+          -1882435594
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          -83052672
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          642354464
+        ],
+        "expected": 50
+      },
+      {
+        "args": [
+          1932029395
+        ],
+        "expected": 50
+      },
+      {
+        "args": [
+          1214045659
+        ],
+        "expected": 50
+      },
+      {
+        "args": [
+          -1411093457
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          1221359375
+        ],
+        "expected": 50
+      },
+      {
+        "args": [
+          -604163085
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          -113351035
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          992614944
+        ],
+        "expected": 50
+      }
+    ]
   }
 ]

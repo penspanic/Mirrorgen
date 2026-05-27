@@ -90,8 +90,9 @@ public class SwitchTests
             }
             """);
         Assert.Contains("((): string => {", ts);
-        Assert.Contains("if (x === 1) return \"a\";", ts);
-        Assert.Contains("if (x === 2) return \"b\";", ts);
+        Assert.Contains("const _v = x;", ts);
+        Assert.Contains("if (_v === 1) return \"a\";", ts);
+        Assert.Contains("if (_v === 2) return \"b\";", ts);
         Assert.Contains("return \"c\";", ts);
     }
 
@@ -114,9 +115,10 @@ public class SwitchTests
                 }
             }
             """);
-        Assert.Contains("if (t === Tier.Bronze) return 100;", ts);
-        Assert.Contains("if (t === Tier.Silver) return 200;", ts);
-        Assert.Contains("if (t === Tier.Gold) return 500;", ts);
+        Assert.Contains("const _v = t;", ts);
+        Assert.Contains("if (_v === Tier.Bronze) return 100;", ts);
+        Assert.Contains("if (_v === Tier.Silver) return 200;", ts);
+        Assert.Contains("if (_v === Tier.Gold) return 500;", ts);
         Assert.Contains("return 0;", ts);
     }
 
@@ -152,5 +154,76 @@ public class SwitchTests
                     }
                 }
                 """));
+    }
+
+    [Fact]
+    public void Switch_Relational_Pattern_Emits_Comparison()
+    {
+        var ts = TranspilerEngine.TranspileSource("""
+            public static class S {
+                [Mirrorgen.Attributes.Transpile]
+                public static string F(int x) {
+                    return x switch {
+                        > 0 => "pos",
+                        < 0 => "neg",
+                        _ => "zero",
+                    };
+                }
+            }
+            """);
+        Assert.Contains("if (_v > 0) return \"pos\";", ts);
+        Assert.Contains("if (_v < 0) return \"neg\";", ts);
+        Assert.Contains("return \"zero\";", ts);
+    }
+
+    [Fact]
+    public void Switch_And_Pattern_Combines_Two_Relationals()
+    {
+        var ts = TranspilerEngine.TranspileSource("""
+            public static class S {
+                [Mirrorgen.Attributes.Transpile]
+                public static string F(int x) {
+                    return x switch {
+                        > 0 and < 10 => "single",
+                        _ => "other",
+                    };
+                }
+            }
+            """);
+        Assert.Contains("(_v > 0 && _v < 10)", ts);
+    }
+
+    [Fact]
+    public void Switch_Or_Pattern_Combines_Two_Constants()
+    {
+        var ts = TranspilerEngine.TranspileSource("""
+            public static class S {
+                [Mirrorgen.Attributes.Transpile]
+                public static string F(int x) {
+                    return x switch {
+                        1 or 2 => "low",
+                        _ => "other",
+                    };
+                }
+            }
+            """);
+        Assert.Contains("(_v === 1 || _v === 2)", ts);
+    }
+
+    [Fact]
+    public void Switch_Arm_With_When_Guard_Wraps_Both_Conditions()
+    {
+        var ts = TranspilerEngine.TranspileSource("""
+            public static class S {
+                [Mirrorgen.Attributes.Transpile]
+                public static int F(int x, int limit) {
+                    return x switch {
+                        > 0 when x < limit => 1,
+                        _ => 0,
+                    };
+                }
+            }
+            """);
+        Assert.Contains("(_v > 0) && (x < limit)", ts);
     }
 }

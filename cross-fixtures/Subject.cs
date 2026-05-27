@@ -121,4 +121,35 @@ public static class Subject
             default: return "three";
         }
     }
+
+    // while loop, bounded so int.MinValue inputs don't hang the JS side.
+    [Transpile, GenerateCrossTest(Samples = 12, Seed = 28)]
+    public static int CountDownToZero(int n)
+    {
+        int i = n;
+        if (i < 0) i = 0;
+        if (i > 200) i = 200;
+        int steps = 0;
+        while (i > 0)
+        {
+            i--;
+            steps++;
+        }
+        return steps;
+    }
+
+    // do-while with break.
+    [Transpile, GenerateCrossTest(Samples = 10, Seed = 29)]
+    public static int FirstNonNegativeStep(int n)
+    {
+        int i = n;
+        if (i < -50) i = -50;
+        if (i > 50) i = 50;
+        do
+        {
+            if (i >= 0) break;
+            i++;
+        } while (i < 100);
+        return i;
+    }
 }

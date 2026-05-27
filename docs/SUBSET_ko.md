@@ -40,18 +40,18 @@ v0.1 에 지원 안 함:
 - Boolean operator, 비교
 - `if` / `else`
 - `for` (C-style), `foreach` (`T[]`, `List<T>`, `IReadOnlyList<T>`, `IList<T>`)
-- `switch` statement, `switch` expression (enum 의 constant pattern + type pattern)
+- `while` / `do-while` (`break` / `continue` 포함)
+- `switch` statement (constant + enum-member pattern), `switch` expression (constant, enum-member, relational `> < >= <= == !=`, 괄호, `and` / `or`, `_`, `when` 가드)
 - 같은 프로젝트의 다른 `[Transpile]` 메서드 호출
 - 허용 리스트의 `System.Math.*` / `System.MathF.*` 함수 호출
 - `return`
 
 v0.1 에 지원 안 함:
-- `while`, `do-while` (generated code 에 unbounded loop 를 정말 원하는지 확신 후 v0.2)
 - 모든 형태의 LINQ
 - `goto`
 - `yield return`
 - `using`, `try` / `catch` / `finally`
-- enum constant 이상의 pattern matching
+- Type pattern (`int n when …`), positional / property / list pattern, 재귀 pattern
 - 사용자 타입에 대한 operator overloading
 - Generic method
 

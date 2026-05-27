@@ -15,7 +15,7 @@ export interface OrderLine {
 export function LineSubtotal(line: OrderLine): number {
   let qty: number = ClampQuantity(line.Quantity, 100);
   let subtotal: number = Total(line.UnitPrice, qty);
-  return ((): number => { if (line.Kind === DiscountKind.None) return subtotal; if (line.Kind === DiscountKind.Percent) return ApplyDiscount(subtotal, line.DiscountValue); if (line.Kind === DiscountKind.Flat) return ((subtotal - line.DiscountValue) | 0); return subtotal; throw new Error("switch expression: no arm matched"); })();
+  return ((): number => { const _v = line.Kind; if (_v === DiscountKind.None) return subtotal; if (_v === DiscountKind.Percent) return ApplyDiscount(subtotal, line.DiscountValue); if (_v === DiscountKind.Flat) return ((subtotal - line.DiscountValue) | 0); return subtotal; throw new Error("switch expression: no arm matched"); })();
 }
 
 export function ClampQuantity(requested: number, max: number): number {

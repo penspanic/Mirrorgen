@@ -87,7 +87,7 @@ export function CategoryByMod(x: number): number {
   if (m < 0) {
     m += 3;
   }
-  return ((): number => { if (m === 0) return 100; if (m === 1) return 200; return 300; throw new Error("switch expression: no arm matched"); })();
+  return ((): number => { const _v = m; if (_v === 0) return 100; if (_v === 1) return 200; return 300; throw new Error("switch expression: no arm matched"); })();
 }
 
 export function LabelMod4(x: number): string {
@@ -105,4 +105,37 @@ export function LabelMod4(x: number): string {
     default:
       return "three";
   }
+}
+
+export function CountDownToZero(n: number): number {
+  let i: number = n;
+  if (i < 0) {
+    i = 0;
+  }
+  if (i > 200) {
+    i = 200;
+  }
+  let steps: number = 0;
+  while (i > 0) {
+    i--;
+    steps++;
+  }
+  return steps;
+}
+
+export function FirstNonNegativeStep(n: number): number {
+  let i: number = n;
+  if (i < -50) {
+    i = -50;
+  }
+  if (i > 50) {
+    i = 50;
+  }
+  do {
+    if (i >= 0) {
+      break;
+    }
+    i++;
+  } while (i < 100);
+  return i;
 }

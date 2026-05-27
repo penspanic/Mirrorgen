@@ -40,18 +40,18 @@ Supported:
 - Boolean operators and comparisons
 - `if` / `else`
 - `for` (C-style), `foreach` (over `T[]`, `List<T>`, `IReadOnlyList<T>`, `IList<T>`)
-- `switch` statement and `switch` expression (constant patterns and type patterns over enums)
+- `while` / `do-while` (with `break` / `continue`)
+- `switch` statement (constant + enum-member patterns) and `switch` expression (constant, enum-member, relational `> < >= <= == !=`, parenthesised, `and` / `or` composites, `_`, `when` guards)
 - Method calls to other `[Transpile]` methods within the same project
 - Method calls to a whitelisted set of `System.Math.*` / `System.MathF.*` functions
 - `return`
 
 Not supported in v0.1:
-- `while`, `do-while` (admitted in v0.2 once we're sure we want unbounded loops in generated code)
 - LINQ in any form
 - `goto`
 - `yield return`
 - `using`, `try` / `catch` / `finally`
-- Pattern matching beyond enum constants
+- Type patterns (`int n when …`), positional / property / list patterns, recursive patterns
 - Operator overloading on user types
 - Generic methods
 
