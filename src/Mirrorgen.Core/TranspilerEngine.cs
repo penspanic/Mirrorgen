@@ -173,16 +173,10 @@ public static class TranspilerEngine
                 // step (shape only).
                 if (hasAttr && node is ClassDeclarationSyntax cls)
                 {
-                    // [TsExport]-only class is shape-only — do NOT auto-emit static
-                    // methods. [Transpile] (or mixed) keeps the existing behaviour.
-                    var tsExportOnly = HasOnlyTsExportAttribute(cls.AttributeLists);
-                    if (!tsExportOnly)
+                    foreach (var memberMethod in cls.Members.OfType<MethodDeclarationSyntax>())
                     {
-                        foreach (var memberMethod in cls.Members.OfType<MethodDeclarationSyntax>())
-                        {
-                            if (IsPublicStaticMethod(memberMethod) && emit.Add(memberMethod))
-                                queue.Enqueue(memberMethod);
-                        }
+                        if (IsPublicStaticMethod(memberMethod) && emit.Add(memberMethod))
+                            queue.Enqueue(memberMethod);
                     }
                 }
             }
@@ -516,7 +510,7 @@ public static class TranspilerEngine
         {
             foreach (var attr in list.Attributes)
             {
-                if (IsTranspileAttributeSyntax(attr) || IsTsExportAttributeSyntax(attr)) return true;
+                if (IsTranspileAttributeSyntax(attr)) return true;
             }
         }
         return false;
@@ -528,33 +522,6 @@ public static class TranspilerEngine
         return n == "Transpile" || n == "TranspileAttribute" ||
                n.EndsWith(".Transpile", StringComparison.Ordinal) ||
                n.EndsWith(".TranspileAttribute", StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// `[TsExport]` recognised as a type-only emit alias — TsGen-compatible.
-    /// Class-level `[TsExport]` does NOT auto-emit static methods (shape-only
-    /// semantics); use `[Transpile]` to opt methods in.
-    /// </summary>
-    static bool IsTsExportAttributeSyntax(AttributeSyntax attr)
-    {
-        var n = attr.Name.ToString();
-        return n == "TsExport" || n == "TsExportAttribute" ||
-               n.EndsWith(".TsExport", StringComparison.Ordinal) ||
-               n.EndsWith(".TsExportAttribute", StringComparison.Ordinal);
-    }
-
-    static bool HasOnlyTsExportAttribute(SyntaxList<AttributeListSyntax> attributeLists)
-    {
-        bool hasTsExport = false;
-        foreach (var list in attributeLists)
-        {
-            foreach (var attr in list.Attributes)
-            {
-                if (IsTsExportAttributeSyntax(attr)) { hasTsExport = true; continue; }
-                if (IsTranspileAttributeSyntax(attr)) return false;
-            }
-        }
-        return hasTsExport;
     }
 
     static string? ReadEmitName(SyntaxList<AttributeListSyntax> attributeLists)
