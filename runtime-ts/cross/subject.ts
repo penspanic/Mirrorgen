@@ -138,6 +138,20 @@ export function CountTwoKeys(map: Record<string, number>, a: string, b: string):
   return sum;
 }
 
+export function BuildListAndCount(n: number): number {
+  if (n < 0) {
+    n = 0;
+  }
+  if (n > 50) {
+    n = 50;
+  }
+  let xs: number[] = [];
+  for (let i: number = 0; i < n; i++) {
+    xs.push(i);
+  }
+  return xs.length;
+}
+
 export function FirstNonNegativeStep(n: number): number {
   let i: number = n;
   if (i < -50) {

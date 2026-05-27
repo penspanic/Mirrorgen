@@ -166,6 +166,18 @@ public static class Subject
         return sum;
     }
 
+    // List mutation — build a list with Add() and read .Count. Tests the
+    // walker mapping List.Add -> push and List.Count -> length end to end.
+    [Transpile, GenerateCrossTest(Samples = 8, Seed = 32)]
+    public static int BuildListAndCount(int n)
+    {
+        if (n < 0) n = 0;
+        if (n > 50) n = 50;
+        var xs = new List<int>();
+        for (int i = 0; i < n; i++) xs.Add(i);
+        return xs.Count;
+    }
+
     // do-while with break.
     [Transpile, GenerateCrossTest(Samples = 10, Seed = 29)]
     public static int FirstNonNegativeStep(int n)

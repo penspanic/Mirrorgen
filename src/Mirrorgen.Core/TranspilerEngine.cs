@@ -974,6 +974,24 @@ public static class TranspilerEngine
         }
     }
 
+    static bool IsListLike(ITypeSymbol type)
+    {
+        if (type is not INamedTypeSymbol named || !named.IsGenericType) return false;
+        var def = named.OriginalDefinition.ToDisplayString();
+        return def is "System.Collections.Generic.List<T>"
+            or "System.Collections.Generic.IReadOnlyList<T>"
+            or "System.Collections.Generic.IList<T>";
+    }
+
+    static bool IsDictionaryLike(ITypeSymbol type)
+    {
+        if (type is not INamedTypeSymbol named || !named.IsGenericType) return false;
+        var def = named.OriginalDefinition.ToDisplayString();
+        return def is "System.Collections.Generic.Dictionary<TKey, TValue>"
+            or "System.Collections.Generic.IReadOnlyDictionary<TKey, TValue>"
+            or "System.Collections.Generic.IDictionary<TKey, TValue>";
+    }
+
     static bool IsArrayLikeEnumerable(ITypeSymbol? type)
     {
         if (type is IArrayTypeSymbol) return true;
@@ -1081,9 +1099,64 @@ public static class TranspilerEngine
             case InvocationExpressionSyntax inv:
                 return EmitInvocation(inv, ctx);
             case MemberAccessExpressionSyntax member when member.IsKind(SyntaxKind.SimpleMemberAccessExpression):
-                return $"{EmitExpression(member.Expression, ctx)}.{member.Name.Identifier.Text}";
+                {
+                    // List<T>.Count / array.Length / Dictionary<K,V>.Count
+                    // all map onto Object.keys(...).length or .length on the
+                    // TS side. Translate the common .Count / .Length idiom
+                    // so consumers can write idiomatic C#.
+                    var receiverType = ctx.TypeOf(member.Expression);
+                    var memberName = member.Name.Identifier.Text;
+                    if (receiverType is not null)
+                    {
+                        if (memberName == "Count" && IsListLike(receiverType))
+                        {
+                            return $"{EmitExpression(member.Expression, ctx)}.length";
+                        }
+                        if (memberName == "Count" && IsDictionaryLike(receiverType))
+                        {
+                            return $"Object.keys({EmitExpression(member.Expression, ctx)}).length";
+                        }
+                        if (memberName == "Length" && receiverType is IArrayTypeSymbol)
+                        {
+                            return $"{EmitExpression(member.Expression, ctx)}.length";
+                        }
+                    }
+                    return $"{EmitExpression(member.Expression, ctx)}.{memberName}";
+                }
             case SwitchExpressionSyntax swx:
                 return EmitSwitchExpression(swx, ctx);
+            case ObjectCreationExpressionSyntax oce:
+                {
+                    // `new List<T>()` -> `[]`. v0.2 doesn't accept any other
+                    // constructor invocation inside a [Transpile] body —
+                    // consumers want the array-equivalent for collections,
+                    // not arbitrary `new`.
+                    if (oce.Type is GenericNameSyntax gName && gName.Identifier.Text == "List" &&
+                        oce.ArgumentList is { Arguments.Count: 0 } or null)
+                    {
+                        return "[]";
+                    }
+                    if (oce.Type is ArrayTypeSyntax arrayType &&
+                        oce.ArgumentList is { Arguments.Count: 0 } or null)
+                    {
+                        return $"new Array<{MapType(arrayType.ElementType, ctx)}>()";
+                    }
+                    throw new NotSupportedException(
+                        $"Unsupported `new` expression '{oce}'. Only `new List<T>()` is supported inside [Transpile] bodies in v0.2.");
+                }
+            case ImplicitObjectCreationExpressionSyntax ioc:
+                {
+                    // `new()` — target-typed. Resolve the type from the
+                    // semantic model. Same restriction as the explicit form.
+                    var typed = ctx.TypeOf(ioc);
+                    if (typed is INamedTypeSymbol named && named.IsGenericType &&
+                        named.OriginalDefinition.ToDisplayString() == "System.Collections.Generic.List<T>")
+                    {
+                        return "[]";
+                    }
+                    throw new NotSupportedException(
+                        $"Unsupported target-typed `new()` of '{typed?.ToDisplayString() ?? "unknown"}'. Only `new List<T>()` is supported.");
+                }
             case ElementAccessExpressionSyntax ea:
                 {
                     var indices = string.Join(", ",
@@ -1121,6 +1194,11 @@ public static class TranspilerEngine
             return dictEmit;
         }
 
+        if (TryMapListInvocation(inv, target, ctx, out var listEmit))
+        {
+            return listEmit;
+        }
+
         if (!IsTranspileMethodSymbol(target))
         {
             throw new NotSupportedException(
@@ -1128,6 +1206,40 @@ public static class TranspilerEngine
         }
 
         return $"{target.Name}({args})";
+    }
+
+    static bool TryMapListInvocation(InvocationExpressionSyntax inv, IMethodSymbol target, EmitContext ctx, out string emit)
+    {
+        emit = string.Empty;
+        if (target.ContainingType is null) return false;
+        var def = target.ContainingType.OriginalDefinition.ToDisplayString();
+        if (def is not (
+            "System.Collections.Generic.List<T>"
+            or "System.Collections.Generic.IList<T>"
+            or "System.Collections.Generic.IReadOnlyList<T>"))
+        {
+            return false;
+        }
+        if (inv.Expression is not MemberAccessExpressionSyntax mae) return false;
+
+        var receiver = EmitExpression(mae.Expression, ctx);
+        var args = string.Join(", ",
+            inv.ArgumentList.Arguments.Select(a => EmitExpression(a.Expression, ctx)));
+
+        // List<T>.Add(x) → push, .Contains(x) → includes(x). Other members
+        // (Remove / Insert / etc.) stay rejected for now — v0.2 starter
+        // covers the two patterns sample code actually reaches for.
+        if (target.Name == "Add" && inv.ArgumentList.Arguments.Count == 1)
+        {
+            emit = $"{receiver}.push({args})";
+            return true;
+        }
+        if (target.Name == "Contains" && inv.ArgumentList.Arguments.Count == 1)
+        {
+            emit = $"{receiver}.includes({args})";
+            return true;
+        }
+        return false;
     }
 
     static bool TryMapDictionaryInvocation(InvocationExpressionSyntax inv, IMethodSymbol target, EmitContext ctx, out string emit)

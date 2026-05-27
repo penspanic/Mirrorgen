@@ -1290,6 +1290,59 @@
     ]
   },
   {
+    "name": "BuildListAndCount",
+    "calls": [
+      {
+        "args": [
+          -953167757
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          -291281215
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          1403545546
+        ],
+        "expected": 50
+      },
+      {
+        "args": [
+          -523645397
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          2011084432
+        ],
+        "expected": 50
+      },
+      {
+        "args": [
+          -1862476446
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          -1355261805
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          -818730196
+        ],
+        "expected": 0
+      }
+    ]
+  },
+  {
     "name": "FirstNonNegativeStep",
     "calls": [
       {
