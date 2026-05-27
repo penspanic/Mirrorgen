@@ -1,7 +1,7 @@
 // Demo entry point — imports the Mirrorgen-emitted module and calls a
 // handful of the pricing rules. Run with: npx tsx src/index.ts (after
 // you have a runner) or just read it as documentation of the emitted shape.
-import { ApplyDiscount, ClampQuantity, Total } from './_generated/rules.ts';
+import { ApplyDiscount, ClampQuantity, Total } from './_generated/Pricing.ts';
 
 const requested = 12;
 const stock = 5;

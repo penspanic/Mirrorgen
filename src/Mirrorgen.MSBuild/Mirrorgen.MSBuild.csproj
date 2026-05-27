@@ -8,17 +8,24 @@
         <IncludeBuildOutput>false</IncludeBuildOutput>
         <DevelopmentDependency>true</DevelopmentDependency>
         <NoPackageAnalysis>true</NoPackageAnalysis>
+        <!--
+          Copy every transitive dependency into bin/ so the MSBuild task host
+          can load them without per-task assembly resolvers. The default
+          behaviour for SDK-style task projects strips transitive lib output.
+        -->
+        <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
         <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_AddMSBuildAssetsToPackage</TargetsForTfmSpecificContentInPackage>
     </PropertyGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\Mirrorgen.Attributes\Mirrorgen.Attributes.csproj" />
-        <ProjectReference Include="..\Mirrorgen.Core\Mirrorgen.Core.csproj" PrivateAssets="all" />
+        <ProjectReference Include="..\Mirrorgen.Core\Mirrorgen.Core.csproj" />
     </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="Microsoft.Build.Framework" PrivateAssets="all" ExcludeAssets="runtime" />
         <PackageReference Include="Microsoft.Build.Utilities.Core" PrivateAssets="all" ExcludeAssets="runtime" />
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
         <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" />
     </ItemGroup>
 
@@ -26,10 +33,18 @@
         <None Include="build\**" Pack="true" PackagePath="build\" />
     </ItemGroup>
 
-    <Target Name="_AddMSBuildAssetsToPackage">
+    <!--
+      Package every dependency the task needs at execution time under tasks/.
+      IncludeBuildOutput=false keeps these out of lib/, so the .nupkg only
+      ships the task host bundle.
+    -->
+    <Target Name="_AddMSBuildAssetsToPackage" DependsOnTargets="BuildOnlySettings;ResolveReferences">
         <ItemGroup>
-            <TfmSpecificPackageFile Include="$(OutputPath)\$(AssemblyName).dll" PackagePath="tasks/" />
-            <TfmSpecificPackageFile Include="$(OutputPath)\Mirrorgen.Core.dll" PackagePath="tasks/" />
+            <TfmSpecificPackageFile Include="$(OutputPath)$(AssemblyName).dll" PackagePath="tasks/" />
+            <TfmSpecificPackageFile Include="$(OutputPath)Mirrorgen.Core.dll" PackagePath="tasks/" />
+            <TfmSpecificPackageFile Include="$(OutputPath)Mirrorgen.Attributes.dll" PackagePath="tasks/" />
+            <TfmSpecificPackageFile Include="$(OutputPath)Microsoft.CodeAnalysis.dll" PackagePath="tasks/" />
+            <TfmSpecificPackageFile Include="$(OutputPath)Microsoft.CodeAnalysis.CSharp.dll" PackagePath="tasks/" />
         </ItemGroup>
     </Target>
 

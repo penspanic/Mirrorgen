@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import * as rules from '../src/_generated/rules.ts';
+import * as rules from '../src/_generated/Pricing.ts';
 
 interface FixtureCall {
     args: unknown[];
@@ -15,7 +15,7 @@ interface FixtureRecord {
 }
 
 const here = dirname(fileURLToPath(import.meta.url));
-const fixturePath = resolve(here, '../src/_generated/rules.fixtures.json');
+const fixturePath = resolve(here, '../src/_generated/Pricing.fixtures.json');
 const fixtures = JSON.parse(readFileSync(fixturePath, 'utf-8')) as FixtureRecord[];
 
 describe('samples/minimal cross-validation (C# Pricing ↔ emitted TS rules)', () => {

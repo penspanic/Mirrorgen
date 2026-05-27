@@ -2,8 +2,26 @@
 
     <UsingTask TaskName="Mirrorgen.MSBuild.MirrorgenTask" AssemblyFile="$(MirrorgenTasksAssembly)" />
 
-    <Target Name="MirrorgenGenerate" BeforeTargets="CoreCompile">
-        <MirrorgenTask />
+    <PropertyGroup>
+        <MirrorgenSourceRoot Condition="'$(MirrorgenSourceRoot)' == ''">$(MSBuildProjectDirectory)</MirrorgenSourceRoot>
+    </PropertyGroup>
+
+    <!--
+      IntermediateOutputPath is filled in by the SDK after this file is
+      imported, so the stamp file path is referenced inline in the target
+      attributes (which are evaluated lazily) rather than captured into a
+      property at import time.
+    -->
+    <Target Name="MirrorgenGenerate"
+            AfterTargets="CoreCompile"
+            Condition="'$(MirrorgenOutput)' != ''"
+            Inputs="@(Compile)"
+            Outputs="$(IntermediateOutputPath)mirrorgen.stamp">
+        <MakeDir Directories="$(IntermediateOutputPath)" />
+        <MirrorgenTask Sources="@(Compile)"
+                       SourceRoot="$(MirrorgenSourceRoot)"
+                       OutputDirectory="$(MirrorgenOutput)" />
+        <Touch Files="$(IntermediateOutputPath)mirrorgen.stamp" AlwaysCreate="true" />
     </Target>
 
 </Project>

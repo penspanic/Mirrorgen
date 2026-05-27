@@ -7,11 +7,29 @@
         <IsPackable>false</IsPackable>
         <RootNamespace>Mirrorgen.Samples.Minimal</RootNamespace>
         <AssemblyName>Mirrorgen.Samples.Minimal.Rules</AssemblyName>
+
+        <!-- Where the MSBuild target writes the emitted .ts files. -->
+        <MirrorgenOutput>$(MSBuildThisFileDirectory)..\client\src\_generated\</MirrorgenOutput>
+        <MirrorgenSourceRoot>$(MSBuildThisFileDirectory)</MirrorgenSourceRoot>
     </PropertyGroup>
 
     <ItemGroup>
         <ProjectReference Include="..\..\..\src\Mirrorgen.Attributes\Mirrorgen.Attributes.csproj" />
+        <ProjectReference Include="..\..\..\src\Mirrorgen.MSBuild\Mirrorgen.MSBuild.csproj"
+                          ReferenceOutputAssembly="false"
+                          OutputItemType="" />
     </ItemGroup>
+
+    <!--
+      In a published-package world, adding `Mirrorgen.MSBuild` as a
+      PackageReference is enough — the NuGet build/ folder injects the
+      targets automatically. From this dev tree we instead point at the
+      built assembly directly and import the .targets file by path.
+    -->
+    <PropertyGroup>
+        <MirrorgenTasksAssembly>$(MSBuildThisFileDirectory)..\..\..\src\Mirrorgen.MSBuild\bin\$(Configuration)\net8.0\Mirrorgen.MSBuild.dll</MirrorgenTasksAssembly>
+    </PropertyGroup>
+    <Import Project="..\..\..\src\Mirrorgen.MSBuild\build\Mirrorgen.MSBuild.targets" />
 
     <!--
       The Mirrorgen.Analyzers project would normally be wired in as
@@ -20,6 +38,5 @@
       and the currently pinned .NET SDK ships an older csc that refuses to
       load it. The wiring will switch back on once the SDK catches up.
     -->
-
 
 </Project>
