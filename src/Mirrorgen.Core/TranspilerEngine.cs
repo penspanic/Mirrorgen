@@ -155,6 +155,7 @@ public static class TranspilerEngine
         // only). The plugin-mapped types are still suppressed.
         var sb = new StringBuilder();
         bool first = true;
+        var emittedTypeNames = new HashSet<string>(StringComparer.Ordinal);
         var siblings = new List<SyntaxTree> { tree };
         foreach (var t in compilation.SyntaxTrees)
         {
@@ -173,6 +174,14 @@ public static class TranspilerEngine
                 if (ctx.Registry.Count > 0 && member is BaseTypeDeclarationSyntax decl &&
                     siblingSemantics.GetDeclaredSymbol(decl) is { } declaredSym &&
                     ctx.Registry.TryGet(declaredSym.ToDisplayString(), out _))
+                {
+                    continue;
+                }
+
+                // Partial declarations of the same type emit once — the first
+                // call gathers members from every syntax reference. Skip the rest.
+                if (member is TypeDeclarationSyntax typeDecl &&
+                    !emittedTypeNames.Add(ReadEmitName(typeDecl.AttributeLists) ?? typeDecl.Identifier.Text))
                 {
                     continue;
                 }
@@ -371,6 +380,9 @@ public static class TranspilerEngine
 
         public ISymbol? SymbolFor(ExpressionSyntax expr) =>
             _model.GetSymbolInfo(expr).Symbol;
+
+        public INamedTypeSymbol? DeclaredTypeSymbol(BaseTypeDeclarationSyntax decl) =>
+            _model.GetDeclaredSymbol(decl);
     }
 
     static readonly Lazy<MetadataReference[]> TrustedReferences = new(BuildTrustedReferences);
@@ -514,26 +526,48 @@ public static class TranspilerEngine
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
-        // Positional record parameters become the primary interface members.
-        if (decl is RecordDeclarationSyntax rec && rec.ParameterList is { } parameters)
+        // Partial declarations: Roslyn merges them at the symbol level. Walk every
+        // syntax reference for the declared symbol so members from each partial
+        // half land in the same interface. Falls back to the single decl when the
+        // symbol can't be resolved (e.g. broken sources).
+        var allDecls = new List<TypeDeclarationSyntax> { decl };
+        if (ctx.DeclaredTypeSymbol(decl) is { } symbol)
         {
-            foreach (var p in parameters.Parameters)
+            allDecls.Clear();
+            foreach (var sref in symbol.DeclaringSyntaxReferences)
             {
-                if (p.Type is null)
+                if (sref.GetSyntax() is TypeDeclarationSyntax td)
+                    allDecls.Add(td);
+            }
+            if (allDecls.Count == 0) allDecls.Add(decl);
+        }
+
+        // Positional record parameters become the primary interface members.
+        // Use whichever partial actually declares the parameter list.
+        foreach (var d in allDecls)
+        {
+            if (d is RecordDeclarationSyntax rec && rec.ParameterList is { } parameters)
+            {
+                foreach (var p in parameters.Parameters)
                 {
-                    throw new NotSupportedException(
-                        $"Record positional parameter '{p.Identifier.Text}' has no type.");
+                    if (p.Type is null)
+                    {
+                        throw new NotSupportedException(
+                            $"Record positional parameter '{p.Identifier.Text}' has no type.");
+                    }
+                    var member = p.Identifier.Text;
+                    if (!seen.Add(member)) continue;
+                    var opt = p.Type is NullableTypeSyntax ? "?" : "";
+                    interfaceBody.Append(BodyIndent).Append(member).Append(opt).Append(": ").Append(MapType(p.Type, ctx)).AppendLine(";");
+                    hasInterfaceMember = true;
                 }
-                var member = p.Identifier.Text;
-                if (!seen.Add(member)) continue;
-                var opt = p.Type is NullableTypeSyntax ? "?" : "";
-                interfaceBody.Append(BodyIndent).Append(member).Append(opt).Append(": ").Append(MapType(p.Type, ctx)).AppendLine(";");
-                hasInterfaceMember = true;
+                break;
             }
         }
 
-        // Properties + fields declared in the body.
-        foreach (var bodyMember in decl.Members)
+        // Properties + fields declared in the body of any partial declaration.
+        foreach (var partial in allDecls)
+        foreach (var bodyMember in partial.Members)
         {
             switch (bodyMember)
             {
