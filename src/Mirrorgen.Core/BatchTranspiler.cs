@@ -153,19 +153,49 @@ public static class BatchTranspiler
             }
         }
 
+        // Reorder so enum declarations land first, then interfaces (shapes),
+        // then consts / functions. TS enums create a temporal dead zone for
+        // their member-value access — referencing `MyEnum.A` before
+        // `export enum MyEnum { … }` is a compile-time error. Without this,
+        // a static-readonly table literal in file A that references an enum
+        // value from file B fails to type-check when B was emitted later.
+        var enumNames = new List<string>();
+        var interfaceNames = new List<string>();
+        var otherNames = new List<string>();
+        foreach (var name in exportOrder)
+        {
+            var block = exports[name];
+            if (BlockStartsWith(block, "export enum") || BlockStartsWith(block, "enum "))
+                enumNames.Add(name);
+            else if (BlockStartsWith(block, "export interface") || BlockStartsWith(block, "interface "))
+                interfaceNames.Add(name);
+            else
+                otherNames.Add(name);
+        }
+
         var sb = new StringBuilder();
         foreach (var name in helperOrder)
         {
             sb.AppendLine(helpers[name]);
             sb.AppendLine();
         }
-        for (int i = 0; i < exportOrder.Count; i++)
+        var ordered = new List<string>();
+        ordered.AddRange(enumNames);
+        ordered.AddRange(interfaceNames);
+        ordered.AddRange(otherNames);
+        for (int i = 0; i < ordered.Count; i++)
         {
-            sb.Append(exports[exportOrder[i]]);
+            sb.Append(exports[ordered[i]]);
             sb.AppendLine();
-            if (i + 1 < exportOrder.Count) sb.AppendLine();
+            if (i + 1 < ordered.Count) sb.AppendLine();
         }
         return sb.ToString();
+    }
+
+    static bool BlockStartsWith(string block, string prefix)
+    {
+        var trimmed = block.TrimStart('\n', '\r', ' ');
+        return trimmed.StartsWith(prefix, System.StringComparison.Ordinal);
     }
 
     // Splits a Mirrorgen-emitted .ts into top-level blocks separated by blank
