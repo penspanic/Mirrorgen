@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
+        <RootNamespace>Mirrorgen.Samples.PricingRules</RootNamespace>
+        <AssemblyName>Mirrorgen.Samples.PricingRules.Rules</AssemblyName>
+
+        <MirrorgenOutput>$(MSBuildThisFileDirectory)..\client\src\_generated\</MirrorgenOutput>
+        <MirrorgenSourceRoot>$(MSBuildThisFileDirectory)</MirrorgenSourceRoot>
+        <MirrorgenEmitFixtures>true</MirrorgenEmitFixtures>
+        <MirrorgenFixturesOutput>$(MirrorgenOutput)fixtures.json</MirrorgenFixturesOutput>
+        <MirrorgenConfig>Mirrorgen.Samples.PricingRules.MirrorgenConfig</MirrorgenConfig>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\src\Mirrorgen.Attributes\Mirrorgen.Attributes.csproj" />
+        <ProjectReference Include="..\..\..\src\Mirrorgen.MSBuild\Mirrorgen.MSBuild.csproj"
+                          ReferenceOutputAssembly="false"
+                          OutputItemType="" />
+    </ItemGroup>
+
+    <PropertyGroup>
+        <MirrorgenTasksAssembly>$(MSBuildThisFileDirectory)..\..\..\src\Mirrorgen.MSBuild\bin\$(Configuration)\net8.0\Mirrorgen.MSBuild.dll</MirrorgenTasksAssembly>
+    </PropertyGroup>
+    <Import Project="..\..\..\src\Mirrorgen.MSBuild\build\Mirrorgen.MSBuild.targets" />
+
+</Project>
