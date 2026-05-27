@@ -522,6 +522,9 @@ public static class TranspilerEngine
         public ISymbol? SymbolFor(ExpressionSyntax expr) =>
             _model.GetSymbolInfo(expr).Symbol;
 
+        public ISymbol? SymbolForIdentifier(IdentifierNameSyntax id) =>
+            _model.GetSymbolInfo(id).Symbol;
+
         public INamedTypeSymbol? DeclaredTypeSymbol(BaseTypeDeclarationSyntax decl) =>
             _model.GetDeclaredSymbol(decl);
     }
@@ -782,9 +785,10 @@ public static class TranspilerEngine
                         var isStatic = field.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword));
                         // Non-public members never cross the C# ↔ TS boundary regardless of kind.
                         if (!isPublic) break;
+                        var fieldEmitName = ReadEmitName(field.AttributeLists);
                         foreach (var variable in field.Declaration.Variables)
                         {
-                            var member = variable.Identifier.Text;
+                            var member = fieldEmitName ?? variable.Identifier.Text;
                             if (!seen.Add(member)) continue;
                             if (isConst && variable.Initializer is not null
                                 && ctx.TryGetConstantValue(variable.Initializer.Value, out var constValue)
@@ -1772,7 +1776,7 @@ public static class TranspilerEngine
             case LiteralExpressionSyntax lit:
                 return EmitLiteral(lit);
             case IdentifierNameSyntax id:
-                return id.Identifier.Text;
+                return ResolveIdentifierEmit(id, ctx);
             case ParenthesizedExpressionSyntax paren:
                 return $"({EmitExpression(paren.Expression, ctx)})";
             case BinaryExpressionSyntax bin:
@@ -2026,6 +2030,31 @@ public static class TranspilerEngine
         }
         emit = "{ " + string.Join(", ", parts) + " }";
         return true;
+    }
+
+    // For identifier references, honour `[Transpile(EmitName="...")]` on the
+    // resolved field symbol so that consts renamed for emit (e.g. to avoid
+    // cross-class collisions on a common name like `MaxLevel`) flow through
+    // body expressions consistently with their declaration.
+    static string ResolveIdentifierEmit(IdentifierNameSyntax id, EmitContext ctx)
+    {
+        var raw = id.Identifier.Text;
+        var sym = ctx.SymbolForIdentifier(id);
+        if (sym is IFieldSymbol field)
+        {
+            foreach (var attr in field.GetAttributes())
+            {
+                if (attr.AttributeClass?.ToDisplayString() != "Mirrorgen.TranspileAttribute") continue;
+                foreach (var kv in attr.NamedArguments)
+                {
+                    if (kv.Key == "EmitName" && kv.Value.Value is string s && !string.IsNullOrEmpty(s))
+                    {
+                        return s;
+                    }
+                }
+            }
+        }
+        return raw;
     }
 
     static bool IsComputedProperty(PropertyDeclarationSyntax prop)

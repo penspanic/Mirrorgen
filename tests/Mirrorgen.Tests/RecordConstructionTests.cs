@@ -96,6 +96,31 @@ public class RecordConstructionTests
     }
 
     [Fact]
+    public void Field_EmitName_Overrides_Const_Name_And_References()
+    {
+        // Two [Transpile] classes can collide on a common const name when
+        // both surface to the same .ts module (e.g. HilbertCurve.MaxLevel
+        // and CubeSphereCellId.MaxLevel). `[Transpile(EmitName="…")]` on the
+        // field renames *both* the `export const` and every identifier
+        // reference inside transpiled bodies so the override flows through.
+        var ts = TranspilerEngine.TranspileSource("""
+            using System;
+            [Mirrorgen.Transpile]
+            public static class S {
+                [Mirrorgen.Transpile(EmitName = "MaxCellLevel")]
+                public const int MaxLevel = 26;
+
+                public static bool TooDeep(int level) => level > MaxLevel;
+            }
+            """);
+        Assert.Contains("export const MaxCellLevel: number = 26;", ts);
+        Assert.Contains("return level > MaxCellLevel;", ts);
+        // The original name must NOT leak into the emit — that would imply
+        // an undefined reference at the call site.
+        Assert.DoesNotContain("MaxLevel", ts.Replace("MaxCellLevel", ""));
+    }
+
+    [Fact]
     public void Cast_To_User_Enum_Emits_TS_As_Keyword()
     {
         // `(CubeFace)x` in TS strict mode needs `as CubeFace` so the
