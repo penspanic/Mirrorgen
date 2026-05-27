@@ -180,19 +180,23 @@ Wire-equivalence on a real adopter's existing output is the v0.1 "done" criterio
 
 ## Roadmap
 
-### v0.1 — Type parity with existing type-only generators + minimal method transpile
-- Type surface as specified above
-- Attributes and analyzers in place
-- MSBuild target works on a sample project
-- Method subset: pure functions over primitives, no array/foreach yet
-- Cross-validation fixture pipeline for pure methods
-- Wire-equivalent migration verified against an existing type-only generator's output
+### v0.1 — Type parity + cross-validated method transpile (shipped as `v0.1.0-alpha.1`)
+- Type surface: enum / record / class / struct / nullable / `T[]` / `List<T>` family / `Dictionary<K,V>` family / transitive reachability
+- Expression / statement: locals, int32 wrap (`| 0`, `Math.imul`), `if / for / foreach / while / do-while`, `switch` (constant + enum + relational + and/or + when), `[Transpile]` -> `[Transpile]` calls, `System.Math.*` whitelist
+- Analyzers MG0001-MG0006 (LINQ, async, Span/ref/unsafe, throw, reflection, inheritance)
+- `Mirrorgen.MSBuild` runs transpile + fixture emit on every build, incrementally
+- `IMirrorgenExtension` plugin maps domain types onto TS primitives / runtime imports
+- `[GenerateCrossTest]` + `[CrossTestCase]` cross-validate the C# / TS boundary; samples/minimal + samples/pricing-rules ship as end-to-end demos
 
-### v0.2 — Real method workloads
-- Arrays and `foreach`
-- `switch` expression on enums
-- Calls between `[Transpile]` methods
-- First real-world adopter: production-grade method transpile for non-trivial validation / pricing / permission logic
+### v0.2 — Real workloads beyond pure 32-bit integer math
+- **`long` / `ulong` -> `BigInt`** emit, replacing v0.1's "reject 64-bit" stop-gap
+- **Generic methods** (`T Identity<T>(T x)`) — the smallest useful generic surface
+- **Type patterns + `var` capture** in switch (`int n when n > 0 => ...`)
+- **`switch` statement** with relational / and / or patterns (expression form already supports them in v0.1)
+- **`Dictionary<K,V>` fixture sampling** — the last `[GenerateCrossTest]` argument shape that still throws
+- **`Mirrorgen.Analyzers` wired into sample builds** once the SDK ships a csc compatible with Roslyn 5.x analyzers
+- **Math.Round / Math.Truncate** with explicit `Math.fround`-style helpers (the C#/JS divergence too big to whitelist directly)
+- **First real-world adopter** carrying production validation / pricing / permission logic
 
 ### v0.3 — User-defined generic types and runtime helpers
 - User generic types (`Pool<T>`-style structures)

@@ -180,19 +180,23 @@ Mirrorgen v0.1 은 typical type-only generator 모양의 drop-in superset 으로
 
 ## Roadmap
 
-### v0.1 — 기존 type-only generator 와 type parity + 최소 method transpile
-- 위 spec 의 type surface
-- Attribute 와 analyzer 배치
-- Sample project 에서 MSBuild target 동작
-- Method 부분집합: primitive 위의 pure 함수, 아직 array/foreach 없음
-- Pure method 에 대한 cross-validation fixture 파이프라인
-- 기존 type-only generator 의 출력에 대해 wire-equivalent 마이그레이션 검증
+### v0.1 — Type parity + cross-validate 된 method transpile (`v0.1.0-alpha.1` 로 publish 됨)
+- Type surface: enum / record / class / struct / nullable / `T[]` / `List<T>` 계열 / `Dictionary<K,V>` 계열 / transitive reachability
+- Expression / statement: locals, int32 wrap (`| 0`, `Math.imul`), `if / for / foreach / while / do-while`, `switch` (constant + enum + relational + and/or + when), `[Transpile]` -> `[Transpile]` 호출, `System.Math.*` whitelist
+- Analyzer MG0001-MG0006 (LINQ, async, Span/ref/unsafe, throw, reflection, inheritance)
+- `Mirrorgen.MSBuild` 가 매 빌드마다 transpile + fixture emit, incremental
+- `IMirrorgenExtension` plugin 으로 도메인 타입을 TS primitive / runtime import 로 매핑
+- `[GenerateCrossTest]` + `[CrossTestCase]` 로 C# / TS 경계 cross-validate; samples/minimal + samples/pricing-rules 가 end-to-end 데모
 
-### v0.2 — 실제 method 워크로드
-- Array 와 `foreach`
-- enum 위의 `switch` expression
-- `[Transpile]` 메서드 간 호출
-- 첫 실세계 채택자: 비자명한 validation / pricing / permission 로직의 production-grade method transpile
+### v0.2 — Pure 32-bit 정수 math 너머의 실제 워크로드
+- **`long` / `ulong` -> `BigInt`** emit — v0.1 의 "64-bit reject" stop-gap 교체
+- **Generic method** (`T Identity<T>(T x)`) — 최소 generic surface
+- **Type pattern + `var` capture** in switch (`int n when n > 0 => ...`)
+- **`switch` statement** 의 relational / and / or pattern (expression 형은 v0.1 에서 이미 지원)
+- **`Dictionary<K,V>` fixture sampling** — `[GenerateCrossTest]` 에서 아직 throw 하는 마지막 argument shape
+- **Sample 빌드에 `Mirrorgen.Analyzers` 연결** — SDK 가 Roslyn 5.x analyzer 호환 csc 를 ship 한 후
+- **Math.Round / Math.Truncate** — 명시적 `Math.fround` 형 helper (C#/JS divergence 가 너무 커서 직접 whitelist 불가)
+- **첫 실세계 채택자** — production validation / pricing / permission 로직
 
 ### v0.3 — 사용자 정의 generic + runtime helper
 - 사용자 generic type (`Pool<T>` 같은 구조)
