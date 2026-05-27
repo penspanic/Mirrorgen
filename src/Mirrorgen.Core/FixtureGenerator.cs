@@ -123,8 +123,59 @@ public static class FixtureGenerator
         if (t == typeof(float)) return (float)(rng.NextDouble() * 200.0 - 100.0);
         if (t == typeof(double)) return rng.NextDouble() * 200.0 - 100.0;
         if (t == typeof(string)) return GenerateString(rng);
+
+        if (t.IsEnum && HasAttribute(t, TranspileAttributeName))
+        {
+            var values = Enum.GetValues(t);
+            return values.GetValue(rng.Next(values.Length))!;
+        }
+
+        if (HasAttribute(t, TranspileAttributeName))
+        {
+            return GenerateTranspileType(t, paramName, methodName, rng);
+        }
+
         throw new NotSupportedException(
             $"FixtureGenerator argument sampling does not yet support type '{t}' (method '{methodName}', parameter '{paramName}').");
+    }
+
+    static object GenerateTranspileType(Type t, string paramName, string methodName, Random rng)
+    {
+        // Prefer the ctor with the most parameters — that's the positional
+        // record primary ctor, or a class's only meaningful ctor. Body-only
+        // members (init / get;set; properties added beyond the primary
+        // ctor's parameters) are set via reflection afterwards.
+        var ctors = t.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
+        var ctor = ctors
+            .OrderByDescending(c => c.GetParameters().Length)
+            .FirstOrDefault()
+            ?? throw new NotSupportedException(
+                $"Type '{t.FullName}' has no public constructor; FixtureGenerator can't sample it (method '{methodName}', parameter '{paramName}').");
+
+        var ctorParams = ctor.GetParameters();
+        var ctorArgs = ctorParams
+            .Select(p => GenerateArg(p.ParameterType, p.Name ?? "_", methodName, rng))
+            .ToArray<object?>();
+        var instance = ctor.Invoke(ctorArgs);
+
+        var ctorParamNames = new HashSet<string>(
+            ctorParams.Where(p => p.Name is not null).Select(p => p.Name!),
+            StringComparer.Ordinal);
+
+        foreach (var prop in t.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+        {
+            if (ctorParamNames.Contains(prop.Name)) continue;
+            if (!prop.CanWrite || prop.GetSetMethod(nonPublic: false) is null) continue;
+            prop.SetValue(instance, GenerateArg(prop.PropertyType, prop.Name, methodName, rng));
+        }
+
+        foreach (var field in t.GetFields(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly))
+        {
+            if (ctorParamNames.Contains(field.Name)) continue;
+            field.SetValue(instance, GenerateArg(field.FieldType, field.Name, methodName, rng));
+        }
+
+        return instance;
     }
 
     const string StringPool = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 -_.";
@@ -144,6 +195,15 @@ public static class FixtureGenerator
     static bool HasAttribute(MethodInfo method, string fullTypeName)
     {
         foreach (var attr in method.GetCustomAttributesData())
+        {
+            if (attr.AttributeType.FullName == fullTypeName) return true;
+        }
+        return false;
+    }
+
+    static bool HasAttribute(Type t, string fullTypeName)
+    {
+        foreach (var attr in t.GetCustomAttributesData())
         {
             if (attr.AttributeType.FullName == fullTypeName) return true;
         }

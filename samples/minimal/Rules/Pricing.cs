@@ -13,6 +13,26 @@ public enum DiscountKind
 [Transpile]
 public record OrderLine(int Quantity, int UnitPrice, DiscountKind Kind, int DiscountValue);
 
+public static class LineMath
+{
+    // Exercises the [Transpile] record + enum cross-test sampling end to end.
+    // Random OrderLine instances drive both sides; vitest asserts byte
+    // equivalence on the int-clamped result.
+    [Transpile, GenerateCrossTest(Samples = 16, Seed = 4)]
+    public static int LineSubtotal(OrderLine line)
+    {
+        int qty = Pricing.ClampQuantity(line.Quantity, 100);
+        int subtotal = Pricing.Total(line.UnitPrice, qty);
+        return line.Kind switch
+        {
+            DiscountKind.None => subtotal,
+            DiscountKind.Percent => Pricing.ApplyDiscount(subtotal, line.DiscountValue),
+            DiscountKind.Flat => subtotal - line.DiscountValue,
+            _ => subtotal,
+        };
+    }
+}
+
 // Three [Transpile] methods that survive the v0.1 walker subset:
 //   - locals + arithmetic with int32 wrap
 //   - control flow with ternary

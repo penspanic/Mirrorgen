@@ -1,5 +1,186 @@
 [
   {
+    "name": "LineSubtotal",
+    "calls": [
+      {
+        "args": [
+          {
+            "Quantity": 1752227527,
+            "UnitPrice": -1211126343,
+            "Kind": 0,
+            "DiscountValue": -116986367
+          }
+        ],
+        "expected": -853550012
+      },
+      {
+        "args": [
+          {
+            "Quantity": -964038664,
+            "UnitPrice": -1607840010,
+            "Kind": 1,
+            "DiscountValue": 821333699
+          }
+        ],
+        "expected": -821333699
+      },
+      {
+        "args": [
+          {
+            "Quantity": -1679415356,
+            "UnitPrice": 1167815424,
+            "Kind": 2,
+            "DiscountValue": -1854161698
+          }
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {
+            "Quantity": -1781119875,
+            "UnitPrice": 923436684,
+            "Kind": 0,
+            "DiscountValue": 801180007
+          }
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {
+            "Quantity": -1399445126,
+            "UnitPrice": -1425575970,
+            "Kind": 2,
+            "DiscountValue": 190752968
+          }
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {
+            "Quantity": -2010722559,
+            "UnitPrice": 229780274,
+            "Kind": 0,
+            "DiscountValue": 1236763738
+          }
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {
+            "Quantity": 875195199,
+            "UnitPrice": -34449635,
+            "Kind": 2,
+            "DiscountValue": 1116417406
+          }
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {
+            "Quantity": -1610596038,
+            "UnitPrice": 1119974245,
+            "Kind": 0,
+            "DiscountValue": -2138533128
+          }
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {
+            "Quantity": -693803893,
+            "UnitPrice": 687126210,
+            "Kind": 2,
+            "DiscountValue": 1142894522
+          }
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {
+            "Quantity": -364789274,
+            "UnitPrice": -1571687283,
+            "Kind": 0,
+            "DiscountValue": -1097623966
+          }
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {
+            "Quantity": -396552310,
+            "UnitPrice": -960343756,
+            "Kind": 0,
+            "DiscountValue": 1119101399
+          }
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {
+            "Quantity": -2022531734,
+            "UnitPrice": -1663525658,
+            "Kind": 2,
+            "DiscountValue": 1349590916
+          }
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {
+            "Quantity": -918602381,
+            "UnitPrice": 2104735999,
+            "Kind": 0,
+            "DiscountValue": -113528902
+          }
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {
+            "Quantity": 450597005,
+            "UnitPrice": 247367678,
+            "Kind": 0,
+            "DiscountValue": -64467024
+          }
+        ],
+        "expected": -1033035976
+      },
+      {
+        "args": [
+          {
+            "Quantity": 1377039912,
+            "UnitPrice": 1358971866,
+            "Kind": 0,
+            "DiscountValue": -1485794150
+          }
+        ],
+        "expected": -1541766872
+      },
+      {
+        "args": [
+          {
+            "Quantity": -940563674,
+            "UnitPrice": 2083199117,
+            "Kind": 1,
+            "DiscountValue": -1212666631
+          }
+        ],
+        "expected": 1212666631
+      }
+    ]
+  },
+  {
     "name": "ClampQuantity",
     "calls": [
       {
