@@ -1068,12 +1068,18 @@ public static class TranspilerEngine
 
         // Plugin mapping wins over the syntactic fallback so consumers can
         // remap their own domain types onto a TS primitive or runtime import.
-        if (ctx.Registry.Count > 0 && ctx.SymbolForTypeSyntax(type) is { } sym)
+        if (ctx.SymbolForTypeSyntax(type) is { } sym)
         {
-            if (ctx.Registry.TryGet(sym.ToDisplayString(), out var mapping))
+            if (ctx.Registry.Count > 0 && ctx.Registry.TryGet(sym.ToDisplayString(), out var mapping))
             {
                 return mapping.TsTypeName;
             }
+            // System.Numerics value types ship as inline structural types so
+            // callers don't have to import a separate Vec3-shaped declaration
+            // from the runtime. The PascalCase X/Y/Z(/W) field names match the
+            // C# field convention exactly.
+            var numerics = MapNumericsType(sym.ToDisplayString());
+            if (numerics is not null) return numerics;
         }
 
         if (type is TupleTypeSyntax tuple)
@@ -2074,6 +2080,14 @@ public static class TranspilerEngine
         emit = string.Empty;
         if (oce.ArgumentList is null) return false;
         if (ctx.TypeOf(oce) is not INamedTypeSymbol named) return false;
+
+        // System.Numerics.Vector3 / Vector2 / Vector4 / Quaternion don't have a
+        // [Transpile] decl on the C# side (they live in BCL). Treat them as
+        // structural value types — emit `new Vector3(a, b, c)` as an object
+        // literal keyed by the PascalCase X/Y/Z(/W) field names. The matching
+        // TS type alias is set up in MapType so signatures stay consistent.
+        if (TryEmitNumericsVectorConstruction(oce, named, ctx, out emit)) return true;
+
         if (!IsTranspileType(named)) return false;
         var paramNames = GetPositionalRecordParamNames(named);
         if (paramNames is null) return false;
@@ -2083,6 +2097,45 @@ public static class TranspilerEngine
         for (int i = 0; i < args.Count; i++)
         {
             parts.Add($"{paramNames[i]}: {EmitExpression(args[i].Expression, ctx)}");
+        }
+        emit = "{ " + string.Join(", ", parts) + " }";
+        return true;
+    }
+
+    // System.Numerics value types emit as inline structural TS objects so
+    // callers never have to depend on a separate Vec3-shaped runtime import.
+    // Returns null when the type isn't in the supported set.
+    static string? MapNumericsType(string fullyQualified)
+    {
+        return fullyQualified switch
+        {
+            "System.Numerics.Vector2" => "{ X: number; Y: number }",
+            "System.Numerics.Vector3" => "{ X: number; Y: number; Z: number }",
+            "System.Numerics.Vector4" => "{ X: number; Y: number; Z: number; W: number }",
+            "System.Numerics.Quaternion" => "{ X: number; Y: number; Z: number; W: number }",
+            _ => null,
+        };
+    }
+
+    static bool TryEmitNumericsVectorConstruction(ObjectCreationExpressionSyntax oce, INamedTypeSymbol named, EmitContext ctx, out string emit)
+    {
+        emit = string.Empty;
+        var fq = named.ToDisplayString();
+        if (oce.ArgumentList is null) return false;
+        var args = oce.ArgumentList.Arguments;
+        string[]? fields = fq switch
+        {
+            "System.Numerics.Vector2" when args.Count == 2 => new[] { "X", "Y" },
+            "System.Numerics.Vector3" when args.Count == 3 => new[] { "X", "Y", "Z" },
+            "System.Numerics.Vector4" when args.Count == 4 => new[] { "X", "Y", "Z", "W" },
+            "System.Numerics.Quaternion" when args.Count == 4 => new[] { "X", "Y", "Z", "W" },
+            _ => null,
+        };
+        if (fields is null) return false;
+        var parts = new List<string>(args.Count);
+        for (int i = 0; i < args.Count; i++)
+        {
+            parts.Add($"{fields[i]}: {EmitExpression(args[i].Expression, ctx)}");
         }
         emit = "{ " + string.Join(", ", parts) + " }";
         return true;
