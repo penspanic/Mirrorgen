@@ -171,9 +171,10 @@ public static class TranspilerEngine
                 // attribute on every helper. Per-method [Transpile] still works
                 // (idempotent: emit.Add is a HashSet). Marker mode skips this
                 // step (shape only).
-                if (hasAttr && node is ClassDeclarationSyntax cls)
+                if (hasAttr && node is TypeDeclarationSyntax tds &&
+                    (node is ClassDeclarationSyntax || node is StructDeclarationSyntax || node is RecordDeclarationSyntax))
                 {
-                    foreach (var memberMethod in cls.Members.OfType<MethodDeclarationSyntax>())
+                    foreach (var memberMethod in tds.Members.OfType<MethodDeclarationSyntax>())
                     {
                         if (IsPublicStaticMethod(memberMethod) && emit.Add(memberMethod))
                             queue.Enqueue(memberMethod);
@@ -194,16 +195,17 @@ public static class TranspilerEngine
         // alone misses helpers like HilbertCurve.Rotate.) Same-file only —
         // sibling trees seed their own emit pass.
         var methodByName = new Dictionary<(string ContainingType, string MethodName), MethodDeclarationSyntax>();
-        foreach (var cls in tree.GetCompilationUnitRoot().DescendantNodes().OfType<ClassDeclarationSyntax>())
+        foreach (var tds in tree.GetCompilationUnitRoot().DescendantNodes().OfType<TypeDeclarationSyntax>())
         {
-            // Only index methods inside classes that themselves have class-level
-            // [Transpile] — otherwise an unrelated helper class would get pulled
-            // in by name collision.
-            if (!HasTranspileAttribute(cls.AttributeLists)) continue;
-            foreach (var m in cls.Members.OfType<MethodDeclarationSyntax>())
+            // Only index methods inside types that themselves have class- /
+            // struct- / record-level [Transpile] — otherwise an unrelated
+            // helper type would get pulled in by name collision.
+            if (!HasTranspileAttribute(tds.AttributeLists)) continue;
+            if (tds is not ClassDeclarationSyntax and not StructDeclarationSyntax and not RecordDeclarationSyntax) continue;
+            foreach (var m in tds.Members.OfType<MethodDeclarationSyntax>())
             {
                 if (!m.Modifiers.Any(t => t.IsKind(SyntaxKind.StaticKeyword))) continue;
-                methodByName[(cls.Identifier.Text, m.Identifier.Text)] = m;
+                methodByName[(tds.Identifier.Text, m.Identifier.Text)] = m;
             }
         }
 
@@ -217,9 +219,9 @@ public static class TranspilerEngine
                     queue.Enqueue(refNode);
                 }
             }
-            // Pull in same-class static helpers reached via invocation.
+            // Pull in same-type static helpers reached via invocation.
             if (n is MethodDeclarationSyntax callerMethod &&
-                callerMethod.Parent is ClassDeclarationSyntax callerCls)
+                callerMethod.Parent is TypeDeclarationSyntax callerTds)
             {
                 foreach (var invSyntax in callerMethod.DescendantNodes().OfType<InvocationExpressionSyntax>())
                 {
@@ -230,7 +232,7 @@ public static class TranspilerEngine
                         _ => null,
                     };
                     if (calleeName is null) continue;
-                    if (methodByName.TryGetValue((callerCls.Identifier.Text, calleeName), out var calleeDecl) &&
+                    if (methodByName.TryGetValue((callerTds.Identifier.Text, calleeName), out var calleeDecl) &&
                         emit.Add(calleeDecl))
                     {
                         queue.Enqueue(calleeDecl);
@@ -763,6 +765,11 @@ public static class TranspilerEngine
                     {
                         var member = prop.Identifier.Text;
                         if (!seen.Add(member)) continue;
+                        // Expression-bodied get-only (`=> expr`) and computed get
+                        // accessors are *behaviour*, not storage. Emitting them
+                        // as interface fields would invite callers to set them.
+                        // Leave behaviour to method emit; skip from the shape.
+                        if (IsComputedProperty(prop)) break;
                         var opt = prop.Type is NullableTypeSyntax ? "?" : "";
                         interfaceBody.Append(BodyIndent).Append(member).Append(opt).Append(": ").Append(MapType(prop.Type, ctx)).AppendLine(";");
                         hasInterfaceMember = true;
@@ -1280,6 +1287,11 @@ public static class TranspilerEngine
                     TryEmitRefInvocationStatement(callee, ctx, indent, out var refStmt))
                 {
                     return refStmt;
+                }
+                if (exprStmt.Expression is AssignmentExpressionSyntax tupAssign &&
+                    TryEmitTupleDeconstructionDeclaration(tupAssign, ctx, indent, out var tupStmt))
+                {
+                    return tupStmt;
                 }
                 return $"{indent}{EmitExpression(exprStmt.Expression, ctx)};\n";
             case ForStatementSyntax forStmt:
@@ -1839,8 +1851,12 @@ public static class TranspilerEngine
                     {
                         return $"new Array<{MapType(arrayType.ElementType, ctx)}>()";
                     }
+                    if (TryEmitRecordConstruction(oce, ctx, out var recEmit))
+                    {
+                        return recEmit;
+                    }
                     throw new NotSupportedException(
-                        $"Unsupported `new` expression '{oce}'. Only `new List<T>()` is supported inside [Transpile] bodies in v0.2.");
+                        $"Unsupported `new` expression '{oce}'. Supported: `new List<T>()`, `new T[N]`, and constructor of a [Transpile]-marked positional record.");
                 }
             case ImplicitObjectCreationExpressionSyntax ioc:
                 {
@@ -1852,8 +1868,29 @@ public static class TranspilerEngine
                     {
                         return "[]";
                     }
+                    if (TryEmitImplicitRecordConstruction(ioc, ctx, out var iocEmit))
+                    {
+                        return iocEmit;
+                    }
                     throw new NotSupportedException(
-                        $"Unsupported target-typed `new()` of '{typed?.ToDisplayString() ?? "unknown"}'. Only `new List<T>()` is supported.");
+                        $"Unsupported target-typed `new()` of '{typed?.ToDisplayString() ?? "unknown"}'. Supported: `new List<T>()` and [Transpile] record `new()`.");
+                }
+            case ImplicitArrayCreationExpressionSyntax iac:
+                {
+                    var elems = iac.Initializer.Expressions
+                        .Select(e => EmitExpression(e, ctx));
+                    return "[" + string.Join(", ", elems) + "]";
+                }
+            case ArrayCreationExpressionSyntax ace:
+                {
+                    if (ace.Initializer is { } initializer)
+                    {
+                        var elems = initializer.Expressions
+                            .Select(e => EmitExpression(e, ctx));
+                        return "[" + string.Join(", ", elems) + "]";
+                    }
+                    throw new NotSupportedException(
+                        $"Unsupported array `new` expression '{ace}'. Use an initializer (`new[] {{ a, b }}`) or `new T[0]` for empty.");
                 }
             case ElementAccessExpressionSyntax ea:
                 {
@@ -1870,6 +1907,168 @@ public static class TranspilerEngine
             default:
                 throw new NotSupportedException($"Unsupported expression: {expr.Kind()}");
         }
+    }
+
+    // Match `var (a, b, c) = expr;` (and the typed form `(int a, int b) = expr;`).
+    // C# parses this as ExpressionStatement(Assignment(DeclarationExpression(var, ParenVarDesign), rhs)).
+    // Emit as a TS destructuring `const` declaration. When RHS has a named-tuple
+    // type (e.g. `(int Face, int Level)`), the field names drive object-pattern
+    // destructure; otherwise we fall back to positional array destructure.
+    static bool TryEmitTupleDeconstructionDeclaration(AssignmentExpressionSyntax assign, EmitContext ctx, string indent, out string emit)
+    {
+        emit = string.Empty;
+        if (!assign.OperatorToken.IsKind(SyntaxKind.EqualsToken)) return false;
+        if (assign.Left is not DeclarationExpressionSyntax decl) return false;
+        if (decl.Designation is not ParenthesizedVariableDesignationSyntax paren) return false;
+
+        var locals = new List<string>(paren.Variables.Count);
+        foreach (var v in paren.Variables)
+        {
+            switch (v)
+            {
+                case SingleVariableDesignationSyntax svd:
+                    locals.Add(svd.Identifier.Text);
+                    break;
+                case DiscardDesignationSyntax:
+                    locals.Add("_");
+                    break;
+                default:
+                    return false;
+            }
+        }
+
+        var rhs = EmitExpression(assign.Right, ctx);
+        var tupleType = ctx.TypeOf(assign.Right) as INamedTypeSymbol;
+        var sb = new StringBuilder();
+        sb.Append(indent).Append("const ");
+        if (tupleType is { IsTupleType: true } && HasNamedTupleElements(tupleType, locals.Count))
+        {
+            sb.Append("{ ");
+            for (int i = 0; i < locals.Count; i++)
+            {
+                var field = tupleType.TupleElements[i].Name;
+                if (string.IsNullOrEmpty(field)) field = $"Item{i + 1}";
+                if (i > 0) sb.Append(", ");
+                if (locals[i] == "_")
+                {
+                    sb.Append(field).Append(": _");
+                }
+                else if (field == locals[i])
+                {
+                    sb.Append(locals[i]);
+                }
+                else
+                {
+                    sb.Append(field).Append(": ").Append(locals[i]);
+                }
+            }
+            sb.Append(" }");
+        }
+        else
+        {
+            sb.Append("[").Append(string.Join(", ", locals)).Append("]");
+        }
+        sb.Append(" = ").Append(rhs).AppendLine(";");
+        emit = sb.ToString();
+        return true;
+    }
+
+    static bool HasNamedTupleElements(INamedTypeSymbol tuple, int expectedCount)
+    {
+        if (tuple.TupleElements.Length != expectedCount) return false;
+        foreach (var elem in tuple.TupleElements)
+        {
+            // For an unnamed tuple (`(int, int)`), the element's Name falls
+            // back to the underlying ValueTuple field name `ItemN`. A named
+            // tuple element has its declared name (`Face` etc.) here, while
+            // the underlying field still reads `ItemN`.
+            if (elem.Name.StartsWith("Item", StringComparison.Ordinal) &&
+                int.TryParse(elem.Name.Substring(4), out _))
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    static bool TryEmitRecordConstruction(ObjectCreationExpressionSyntax oce, EmitContext ctx, out string emit)
+    {
+        emit = string.Empty;
+        if (oce.ArgumentList is null) return false;
+        if (ctx.TypeOf(oce) is not INamedTypeSymbol named) return false;
+        if (!IsTranspileType(named)) return false;
+        var paramNames = GetPositionalRecordParamNames(named);
+        if (paramNames is null) return false;
+        var args = oce.ArgumentList.Arguments;
+        if (paramNames.Count != args.Count) return false;
+        var parts = new List<string>(args.Count);
+        for (int i = 0; i < args.Count; i++)
+        {
+            parts.Add($"{paramNames[i]}: {EmitExpression(args[i].Expression, ctx)}");
+        }
+        emit = "{ " + string.Join(", ", parts) + " }";
+        return true;
+    }
+
+    static bool TryEmitImplicitRecordConstruction(ImplicitObjectCreationExpressionSyntax ioc, EmitContext ctx, out string emit)
+    {
+        emit = string.Empty;
+        if (ctx.TypeOf(ioc) is not INamedTypeSymbol named) return false;
+        if (!IsTranspileType(named)) return false;
+        var paramNames = GetPositionalRecordParamNames(named);
+        if (paramNames is null) return false;
+        var args = ioc.ArgumentList.Arguments;
+        if (paramNames.Count != args.Count) return false;
+        var parts = new List<string>(args.Count);
+        for (int i = 0; i < args.Count; i++)
+        {
+            parts.Add($"{paramNames[i]}: {EmitExpression(args[i].Expression, ctx)}");
+        }
+        emit = "{ " + string.Join(", ", parts) + " }";
+        return true;
+    }
+
+    static bool IsComputedProperty(PropertyDeclarationSyntax prop)
+    {
+        if (prop.ExpressionBody is not null) return true;
+        if (prop.AccessorList is null) return false;
+        foreach (var acc in prop.AccessorList.Accessors)
+        {
+            if (acc.Kind() == SyntaxKind.GetAccessorDeclaration &&
+                (acc.Body is not null || acc.ExpressionBody is not null))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static bool IsTranspileType(INamedTypeSymbol type)
+    {
+        foreach (var attr in type.GetAttributes())
+        {
+            if (attr.AttributeClass?.ToDisplayString() == "Mirrorgen.TranspileAttribute") return true;
+        }
+        return false;
+    }
+
+    // Read positional record parameter names (which become interface fields).
+    // Returns null when the symbol has no primary constructor we can read.
+    static List<string>? GetPositionalRecordParamNames(INamedTypeSymbol type)
+    {
+        foreach (var sref in type.DeclaringSyntaxReferences)
+        {
+            if (sref.GetSyntax() is RecordDeclarationSyntax rec && rec.ParameterList is { } parameters)
+            {
+                var names = new List<string>(parameters.Parameters.Count);
+                foreach (var p in parameters.Parameters)
+                {
+                    names.Add(p.Identifier.Text);
+                }
+                return names;
+            }
+        }
+        return null;
     }
 
     static string EmitTupleExpression(TupleExpressionSyntax tupleExpr, EmitContext ctx)
@@ -1963,12 +2162,21 @@ public static class TranspilerEngine
                     }
                     break;
                 case InterpolationSyntax intr:
-                    if (intr.AlignmentClause is not null || intr.FormatClause is not null)
+                    if (intr.AlignmentClause is not null)
                     {
                         throw new NotSupportedException(
-                            "Interpolation alignment / format clauses (`,N` / `:fmt`) are not supported.");
+                            "Interpolation alignment clauses (`,N`) are not supported.");
                     }
-                    sb.Append("${").Append(EmitExpression(intr.Expression, ctx)).Append('}');
+                    if (intr.FormatClause is { } fmt)
+                    {
+                        var expr = EmitExpression(intr.Expression, ctx);
+                        var fmtEmit = ApplyInterpolationFormat(expr, fmt.FormatStringToken.ValueText, ctx.TypeOf(intr.Expression));
+                        sb.Append("${").Append(fmtEmit).Append('}');
+                    }
+                    else
+                    {
+                        sb.Append("${").Append(EmitExpression(intr.Expression, ctx)).Append('}');
+                    }
                     break;
                 default:
                     throw new NotSupportedException($"Unsupported interpolated content: {part.Kind()}");
@@ -1976,6 +2184,56 @@ public static class TranspilerEngine
         }
         sb.Append('`');
         return sb.ToString();
+    }
+
+    // Apply a C# composite-format specifier to a TS expression. Supports the
+    // subset that actually appears in the OFF topology mirrors:
+    //   X / X{N}  — uppercase hex, zero-padded to N digits
+    //   x / x{N}  — lowercase hex, zero-padded to N digits
+    //   D / D{N}  — base-10 with zero-padding
+    // For BigInt sources we call `.toString(16)` directly; number sources go
+    // via `Number(...).toString(16)` to match `ToString("X16")` on uint64. The
+    // padding is exact to .NET's semantics: pad on the *unsigned* hex digits.
+    static string ApplyInterpolationFormat(string expr, string format, ITypeSymbol? sourceType)
+    {
+        if (string.IsNullOrEmpty(format))
+        {
+            return expr;
+        }
+        var first = format[0];
+        var digitsPart = format.Length > 1 ? format.Substring(1) : string.Empty;
+        int padTo = 0;
+        if (digitsPart.Length > 0 && !int.TryParse(digitsPart, NumberStyles.None, CultureInfo.InvariantCulture, out padTo))
+        {
+            throw new NotSupportedException(
+                $"Unsupported interpolation format specifier '{format}'. Padding width must be a decimal integer.");
+        }
+        bool isBigInt = sourceType?.SpecialType is SpecialType.System_Int64 or SpecialType.System_UInt64;
+        switch (first)
+        {
+            case 'X':
+            case 'x':
+                {
+                    var hex = isBigInt
+                        ? $"({expr}).toString(16)"
+                        : $"Number({expr}).toString(16)";
+                    if (first == 'X') hex = $"{hex}.toUpperCase()";
+                    if (padTo > 0) hex = $"{hex}.padStart({padTo}, '0')";
+                    return hex;
+                }
+            case 'D':
+            case 'd':
+                {
+                    var dec = isBigInt
+                        ? $"({expr}).toString()"
+                        : $"String({expr})";
+                    if (padTo > 0) dec = $"{dec}.padStart({padTo}, '0')";
+                    return dec;
+                }
+            default:
+                throw new NotSupportedException(
+                    $"Unsupported interpolation format specifier '{format}'. Supported: X / x / D (with optional zero-pad width).");
+        }
     }
 
     static string EmitCast(CastExpressionSyntax cast, EmitContext ctx)
@@ -2273,6 +2531,8 @@ public static class TranspilerEngine
         { "ArgumentException", "TypeError" },
         { "FormatException", "TypeError" },
         { "InvalidCastException", "TypeError" },
+        { "InvalidOperationException", "Error" },
+        { "NotSupportedException", "Error" },
     };
 
     static string MapExceptionType(string csName)
