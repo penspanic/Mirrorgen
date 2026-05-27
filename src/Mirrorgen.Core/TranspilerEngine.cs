@@ -23,31 +23,82 @@ public static class TranspilerEngine
             syntaxTrees: new[] { tree },
             references: TrustedReferences.Value,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+        return TranspileTree(tree, compilation, registry);
+    }
+
+    /// <summary>
+    /// Emits TS for a single SyntaxTree's [Transpile] entry points, but also
+    /// pulls in any reachable type declarations from sibling trees in
+    /// <paramref name="compilation"/>. This keeps multi-file consumers
+    /// honest: a method in <c>Pricing.cs</c> that references a record in
+    /// <c>Domain.cs</c> sees the record's TS form inlined into its own .ts
+    /// emit, with no separate import step needed.
+    /// </summary>
+    public static string TranspileTree(SyntaxTree tree, CSharpCompilation compilation, TypeMappingRegistry registry)
+    {
         var ctx = new EmitContext(compilation.GetSemanticModel(tree), registry);
 
-        // Index every type/method declaration in the tree so the reachability
-        // scan can resolve identifier references back to their declaration.
+        // Index every type/method declaration in every tree so the
+        // reachability scan can resolve identifier references back to their
+        // declaration even when it lives in a sibling file.
         var typeByName = new Dictionary<string, SyntaxNode>(StringComparer.Ordinal);
         var methods = new List<MethodDeclarationSyntax>();
+        foreach (var t in compilation.SyntaxTrees)
+        {
+            foreach (var node in t.GetCompilationUnitRoot().DescendantNodes())
+            {
+                switch (node)
+                {
+                    case EnumDeclarationSyntax e: typeByName[e.Identifier.Text] = e; break;
+                    case RecordDeclarationSyntax r: typeByName[r.Identifier.Text] = r; break;
+                    case ClassDeclarationSyntax c: typeByName[c.Identifier.Text] = c; break;
+                    case StructDeclarationSyntax s: typeByName[s.Identifier.Text] = s; break;
+                }
+            }
+        }
+        // Methods only emit from the current tree — sibling trees' methods
+        // get their own .ts file from this same call further up the batch.
         foreach (var node in tree.GetCompilationUnitRoot().DescendantNodes())
         {
-            switch (node)
+            if (node is MethodDeclarationSyntax m) methods.Add(m);
+        }
+
+        // In a multi-tree compilation (batch mode) a file that only declares
+        // [Transpile] types is treated as a "domain shape" file — its
+        // declarations get pulled into whichever .ts file emits the methods
+        // that reference them, so a standalone Domain.ts that nobody
+        // imports would just duplicate the type surface. Returning empty
+        // here signals BatchTranspiler to skip writing a file for this tree.
+        // Single-tree callers (TranspileSource) opt into the "emit
+        // everything you've got" behaviour — they have no sibling file to
+        // inline into.
+        if (compilation.SyntaxTrees.Length > 1)
+        {
+            bool hasOwnTranspileMethod = false;
+            foreach (var m in methods)
             {
-                case EnumDeclarationSyntax e: typeByName[e.Identifier.Text] = e; break;
-                case RecordDeclarationSyntax r: typeByName[r.Identifier.Text] = r; break;
-                case ClassDeclarationSyntax c: typeByName[c.Identifier.Text] = c; break;
-                case StructDeclarationSyntax s: typeByName[s.Identifier.Text] = s; break;
-                case MethodDeclarationSyntax m: methods.Add(m); break;
+                if (HasTranspileAttribute(m.AttributeLists))
+                {
+                    hasOwnTranspileMethod = true;
+                    break;
+                }
+            }
+            if (!hasOwnTranspileMethod)
+            {
+                return string.Empty;
             }
         }
 
-        // BFS reachability from every explicit [Transpile] entry point.
+        // BFS reachability from every explicit [Transpile] entry point in
+        // the current tree. Sibling trees seed their own emit pass; we only
+        // pull their declarations in transitively when *this* tree's methods
+        // / records reference them.
         var emit = new HashSet<SyntaxNode>();
         var queue = new Queue<SyntaxNode>();
-        foreach (var node in typeByName.Values)
+        foreach (var node in tree.GetCompilationUnitRoot().DescendantNodes())
         {
             var attrs = TypeAttributeLists(node);
-            if (HasTranspileAttribute(attrs))
+            if (attrs.Count > 0 && HasTranspileAttribute(attrs))
             {
                 if (emit.Add(node)) queue.Enqueue(node);
             }
@@ -71,36 +122,50 @@ public static class TranspilerEngine
             }
         }
 
-        // Emit in declaration order so output is stable across runs.
+        // Emit pass — walk every tree in the compilation so reachable
+        // declarations from sibling files end up inlined into this file's
+        // output. Order: declarations first (from current tree, then
+        // sibling trees in compilation order), then methods (current tree
+        // only). The plugin-mapped types are still suppressed.
         var sb = new StringBuilder();
         bool first = true;
-        var semanticModel = compilation.GetSemanticModel(tree);
-        foreach (var member in tree.GetCompilationUnitRoot().DescendantNodes())
+        var siblings = new List<SyntaxTree> { tree };
+        foreach (var t in compilation.SyntaxTrees)
         {
-            if (!emit.Contains(member)) continue;
-
-            // Types the plugin has remapped (e.g. OrderId -> number) must
-            // not also emit their own declaration; the runtime side owns it.
-            if (ctx.Registry.Count > 0 && member is BaseTypeDeclarationSyntax decl &&
-                semanticModel.GetDeclaredSymbol(decl) is { } declaredSym &&
-                ctx.Registry.TryGet(declaredSym.ToDisplayString(), out _))
+            if (t != tree) siblings.Add(t);
+        }
+        foreach (var t in siblings)
+        {
+            var siblingSemantics = compilation.GetSemanticModel(t);
+            var siblingCtx = t == tree ? ctx : new EmitContext(siblingSemantics, registry);
+            foreach (var member in t.GetCompilationUnitRoot().DescendantNodes())
             {
-                continue;
+                if (!emit.Contains(member)) continue;
+
+                // Types the plugin has remapped (e.g. OrderId -> number) must
+                // not also emit their own declaration; the runtime side owns it.
+                if (ctx.Registry.Count > 0 && member is BaseTypeDeclarationSyntax decl &&
+                    siblingSemantics.GetDeclaredSymbol(decl) is { } declaredSym &&
+                    ctx.Registry.TryGet(declaredSym.ToDisplayString(), out _))
+                {
+                    continue;
+                }
+
+                string? emitted = member switch
+                {
+                    EnumDeclarationSyntax enumDecl => EmitEnum(enumDecl),
+                    RecordDeclarationSyntax rec => EmitTypeDeclaration(rec, siblingCtx),
+                    ClassDeclarationSyntax cls => EmitTypeDeclaration(cls, siblingCtx),
+                    StructDeclarationSyntax str => EmitTypeDeclaration(str, siblingCtx),
+                    // Sibling-tree methods belong to their own file's emit pass.
+                    MethodDeclarationSyntax method when t == tree => EmitMethod(method, siblingCtx),
+                    _ => null,
+                };
+                if (emitted is null) continue;
+                if (!first) sb.AppendLine();
+                sb.Append(emitted);
+                first = false;
             }
-
-            string? emitted = member switch
-            {
-                EnumDeclarationSyntax enumDecl => EmitEnum(enumDecl),
-                RecordDeclarationSyntax rec => EmitTypeDeclaration(rec, ctx),
-                ClassDeclarationSyntax cls => EmitTypeDeclaration(cls, ctx),
-                StructDeclarationSyntax str => EmitTypeDeclaration(str, ctx),
-                MethodDeclarationSyntax method => EmitMethod(method, ctx),
-                _ => null,
-            };
-            if (emitted is null) continue;
-            if (!first) sb.AppendLine();
-            sb.Append(emitted);
-            first = false;
         }
         return sb.ToString();
     }
@@ -205,6 +270,9 @@ public static class TranspilerEngine
     }
 
     static readonly Lazy<MetadataReference[]> TrustedReferences = new(BuildTrustedReferences);
+
+    /// <summary>Public accessor for <see cref="BatchTranspiler"/> to share the same BCL reference set.</summary>
+    public static MetadataReference[] PublicTrustedReferences => TrustedReferences.Value;
 
     static MetadataReference[] BuildTrustedReferences()
     {

@@ -2,40 +2,6 @@ using Mirrorgen;
 
 namespace Mirrorgen.Samples.PricingRules;
 
-// Domain shapes — kept in the same file as the rules until the walker
-// learns to resolve cross-file [Transpile] reachability (see GH issue
-// for the walker:multi-file follow-up).
-//
-// OrderId / ProductId are pure identifiers — the plugin in
-// MirrorgenConfig.cs collapses them onto a TS `number` so the wrapper
-// never crosses the boundary. Money carries a single field too, but
-// the rules read its `.Cents` member, so we emit it as an interface
-// instead of mapping it.
-[Transpile]
-public record Money(int Cents);
-public readonly record struct OrderId(int Value);
-public readonly record struct ProductId(int Value);
-
-[Transpile]
-public enum CustomerTier
-{
-    Bronze = 0,
-    Silver = 1,
-    Gold = 2,
-    Platinum = 3,
-}
-
-[Transpile]
-public enum ShippingZone
-{
-    Local = 0,
-    Regional = 1,
-    International = 2,
-}
-
-[Transpile]
-public record OrderLine(ProductId Product, int Quantity, Money UnitPrice);
-
 public static class Pricing
 {
     // Switch expression with enum-member patterns. The discount is expressed

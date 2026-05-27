@@ -1,5 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
 
 namespace Mirrorgen.Core;
 
@@ -10,7 +12,9 @@ public static class BatchTranspiler
     /// <summary>
     /// Transpiles each source file relative to <paramref name="sourceRoot"/> into a
     /// matching .ts file under <paramref name="outputDir"/>. Files whose translation
-    /// is empty (no `[Transpile]` members) are skipped.
+    /// is empty (no `[Transpile]` members) are skipped. All source files share
+    /// one CSharpCompilation so cross-file reachability works — a method in
+    /// one file referencing a record in another inlines the record.
     /// </summary>
     public static Result TranspileFiles(IEnumerable<string> sourceFiles, string sourceRoot, string outputDir)
         => TranspileFiles(sourceFiles, sourceRoot, outputDir, TypeMappingRegistry.Empty);
@@ -20,16 +24,27 @@ public static class BatchTranspiler
         var src = Path.GetFullPath(sourceRoot);
         var dst = Path.GetFullPath(outputDir);
 
-        int written = 0;
-        int skipped = 0;
-
+        var fileList = new List<(string path, string relative, SyntaxTree tree)>();
         foreach (var csFile in sourceFiles)
         {
             var fullCs = Path.GetFullPath(csFile);
             var rel = Path.GetRelativePath(src, fullCs);
-
             var source = File.ReadAllText(fullCs);
-            var ts = TranspilerEngine.TranspileSource(source, registry);
+            var tree = CSharpSyntaxTree.ParseText(source, path: fullCs);
+            fileList.Add((fullCs, rel, tree));
+        }
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "MirrorgenBatch",
+            syntaxTrees: fileList.ConvertAll(e => e.tree),
+            references: TranspilerEngine.PublicTrustedReferences,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        int written = 0;
+        int skipped = 0;
+        foreach (var (path, rel, tree) in fileList)
+        {
+            var ts = TranspilerEngine.TranspileTree(tree, compilation, registry);
             if (string.IsNullOrEmpty(ts))
             {
                 skipped++;

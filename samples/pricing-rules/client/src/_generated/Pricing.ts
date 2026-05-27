@@ -1,26 +1,3 @@
-export interface Money {
-  Cents: number;
-}
-
-export enum CustomerTier {
-  Bronze = 0,
-  Silver = 1,
-  Gold = 2,
-  Platinum = 3,
-}
-
-export enum ShippingZone {
-  Local = 0,
-  Regional = 1,
-  International = 2,
-}
-
-export interface OrderLine {
-  Product: number;
-  Quantity: number;
-  UnitPrice: Money;
-}
-
 export function TierDiscountBps(tier: CustomerTier): number {
   return ((): number => { const _v = tier; if (_v === CustomerTier.Bronze) return 0; if (_v === CustomerTier.Silver) return 250; if (_v === CustomerTier.Gold) return 750; if (_v === CustomerTier.Platinum) return 1500; return 0; throw new Error("switch expression: no arm matched"); })();
 }
@@ -64,4 +41,27 @@ export function LineSubtotalCents(line: OrderLine): number {
 
 export function ZoneForDistance(distanceKm: number): ShippingZone {
   return ((): ShippingZone => { const _v = distanceKm; if ((_v >= 0 && _v < 50)) return ShippingZone.Local; if ((_v >= 50 && _v < 1000)) return ShippingZone.Regional; return ShippingZone.International; throw new Error("switch expression: no arm matched"); })();
+}
+
+export interface Money {
+  Cents: number;
+}
+
+export enum CustomerTier {
+  Bronze = 0,
+  Silver = 1,
+  Gold = 2,
+  Platinum = 3,
+}
+
+export enum ShippingZone {
+  Local = 0,
+  Regional = 1,
+  International = 2,
+}
+
+export interface OrderLine {
+  Product: number;
+  Quantity: number;
+  UnitPrice: Money;
 }
