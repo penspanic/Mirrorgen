@@ -368,6 +368,9 @@ public static class TranspilerEngine
             value = null;
             return false;
         }
+
+        public ISymbol? SymbolFor(ExpressionSyntax expr) =>
+            _model.GetSymbolInfo(expr).Symbol;
     }
 
     static readonly Lazy<MetadataReference[]> TrustedReferences = new(BuildTrustedReferences);
@@ -1310,6 +1313,17 @@ public static class TranspilerEngine
                         {
                             return $"{EmitExpression(member.Expression, ctx)}.length";
                         }
+                    }
+                    // Cross-class const reference: `OtherClass.SomeConst` inlines to
+                    // the literal value via Roslyn's constant evaluation. Enum
+                    // member access (`MyEnum.Foo`) is excluded — those keep the
+                    // qualified form so the TS enum still indexes correctly.
+                    if (ctx.SymbolFor(member) is IFieldSymbol field && field.IsConst &&
+                        field.ContainingType?.TypeKind != TypeKind.Enum &&
+                        ctx.TryGetConstantValue(member, out var constValue) &&
+                        TryFormatTsLiteral(constValue, out var literal))
+                    {
+                        return literal;
                     }
                     return $"{EmitExpression(member.Expression, ctx)}.{memberName}";
                 }
