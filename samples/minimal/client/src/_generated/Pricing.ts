@@ -5,6 +5,7 @@ export enum DiscountKind {
 }
 
 export interface OrderLine {
+  Id: number;
   Quantity: number;
   UnitPrice: number;
   Kind: DiscountKind;

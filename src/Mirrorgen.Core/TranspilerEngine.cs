@@ -13,6 +13,9 @@ public static class TranspilerEngine
     public const string Version = "0.0.1-alpha";
 
     public static string TranspileSource(string csharpSource)
+        => TranspileSource(csharpSource, TypeMappingRegistry.Empty);
+
+    public static string TranspileSource(string csharpSource, TypeMappingRegistry registry)
     {
         var tree = CSharpSyntaxTree.ParseText(csharpSource);
         var compilation = CSharpCompilation.Create(
@@ -20,7 +23,7 @@ public static class TranspilerEngine
             syntaxTrees: new[] { tree },
             references: TrustedReferences.Value,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-        var ctx = new EmitContext(compilation.GetSemanticModel(tree));
+        var ctx = new EmitContext(compilation.GetSemanticModel(tree), registry);
 
         // Index every type/method declaration in the tree so the reachability
         // scan can resolve identifier references back to their declaration.
@@ -71,9 +74,20 @@ public static class TranspilerEngine
         // Emit in declaration order so output is stable across runs.
         var sb = new StringBuilder();
         bool first = true;
+        var semanticModel = compilation.GetSemanticModel(tree);
         foreach (var member in tree.GetCompilationUnitRoot().DescendantNodes())
         {
             if (!emit.Contains(member)) continue;
+
+            // Types the plugin has remapped (e.g. OrderId -> number) must
+            // not also emit their own declaration; the runtime side owns it.
+            if (ctx.Registry.Count > 0 && member is BaseTypeDeclarationSyntax decl &&
+                semanticModel.GetDeclaredSymbol(decl) is { } declaredSym &&
+                ctx.Registry.TryGet(declaredSym.ToDisplayString(), out _))
+            {
+                continue;
+            }
+
             string? emitted = member switch
             {
                 EnumDeclarationSyntax enumDecl => EmitEnum(enumDecl),
@@ -163,7 +177,13 @@ public static class TranspilerEngine
     sealed class EmitContext
     {
         readonly SemanticModel _model;
-        public EmitContext(SemanticModel model) { _model = model; }
+        public TypeMappingRegistry Registry { get; }
+
+        public EmitContext(SemanticModel model, TypeMappingRegistry registry)
+        {
+            _model = model;
+            Registry = registry;
+        }
 
         public ITypeSymbol? TypeOf(ExpressionSyntax expr)
         {
@@ -179,6 +199,9 @@ public static class TranspilerEngine
 
         public IMethodSymbol? InvocationTarget(InvocationExpressionSyntax inv) =>
             _model.GetSymbolInfo(inv).Symbol as IMethodSymbol;
+
+        public ITypeSymbol? SymbolForTypeSyntax(TypeSyntax type) =>
+            _model.GetSymbolInfo(type).Symbol as ITypeSymbol;
     }
 
     static readonly Lazy<MetadataReference[]> TrustedReferences = new(BuildTrustedReferences);
@@ -207,13 +230,13 @@ public static class TranspilerEngine
     static string EmitMethod(MethodDeclarationSyntax method, EmitContext ctx)
     {
         var name = ReadEmitName(method.AttributeLists) ?? method.Identifier.Text;
-        var returnType = MapType(method.ReturnType);
+        var returnType = MapType(method.ReturnType, ctx);
         var parameters = string.Join(
             ", ",
             method.ParameterList.Parameters.Select(p =>
                 p.Type is null
                     ? throw new NotSupportedException($"Parameter '{p.Identifier.Text}' has no type.")
-                    : $"{p.Identifier.Text}: {MapType(p.Type)}"));
+                    : $"{p.Identifier.Text}: {MapType(p.Type, ctx)}"));
 
         var sb = new StringBuilder();
         sb.Append("export function ").Append(name).Append('(').Append(parameters).Append("): ").Append(returnType).AppendLine(" {");
@@ -317,7 +340,7 @@ public static class TranspilerEngine
                 }
                 var member = p.Identifier.Text;
                 if (!seen.Add(member)) continue;
-                sb.Append(BodyIndent).Append(member).Append(": ").Append(MapType(p.Type)).AppendLine(";");
+                sb.Append(BodyIndent).Append(member).Append(": ").Append(MapType(p.Type, ctx)).AppendLine(";");
             }
         }
 
@@ -330,7 +353,7 @@ public static class TranspilerEngine
                     {
                         var member = prop.Identifier.Text;
                         if (!seen.Add(member)) continue;
-                        sb.Append(BodyIndent).Append(member).Append(": ").Append(MapType(prop.Type)).AppendLine(";");
+                        sb.Append(BodyIndent).Append(member).Append(": ").Append(MapType(prop.Type, ctx)).AppendLine(";");
                         break;
                     }
                 case FieldDeclarationSyntax field:
@@ -338,7 +361,7 @@ public static class TranspilerEngine
                     {
                         var member = variable.Identifier.Text;
                         if (!seen.Add(member)) continue;
-                        sb.Append(BodyIndent).Append(member).Append(": ").Append(MapType(field.Declaration.Type)).AppendLine(";");
+                        sb.Append(BodyIndent).Append(member).Append(": ").Append(MapType(field.Declaration.Type, ctx)).AppendLine(";");
                     }
                     break;
                 // Methods / constructors / etc. on a [Transpile] type aren't part of
@@ -371,15 +394,15 @@ public static class TranspilerEngine
         return false;
     }
 
-    static string MapType(TypeSyntax type)
+    static string MapType(TypeSyntax type, EmitContext ctx)
     {
         if (type is ArrayTypeSyntax arr)
         {
-            return $"{MapType(arr.ElementType)}[]";
+            return $"{MapType(arr.ElementType, ctx)}[]";
         }
         if (type is NullableTypeSyntax nt)
         {
-            return $"{MapType(nt.ElementType)} | null";
+            return $"{MapType(nt.ElementType, ctx)} | null";
         }
         if (type is GenericNameSyntax gen)
         {
@@ -387,14 +410,25 @@ public static class TranspilerEngine
             var args = gen.TypeArgumentList.Arguments;
             if (genericName is "List" or "IReadOnlyList" or "IList" && args.Count == 1)
             {
-                return $"{MapType(args[0])}[]";
+                return $"{MapType(args[0], ctx)}[]";
             }
             if (genericName is "Dictionary" or "IReadOnlyDictionary" or "IDictionary" && args.Count == 2)
             {
-                return $"Record<{MapType(args[0])}, {MapType(args[1])}>";
+                return $"Record<{MapType(args[0], ctx)}, {MapType(args[1], ctx)}>";
             }
             throw new NotSupportedException($"Unsupported generic type: {type}");
         }
+
+        // Plugin mapping wins over the syntactic fallback so consumers can
+        // remap their own domain types onto a TS primitive or runtime import.
+        if (ctx.Registry.Count > 0 && ctx.SymbolForTypeSyntax(type) is { } sym)
+        {
+            if (ctx.Registry.TryGet(sym.ToDisplayString(), out var mapping))
+            {
+                return mapping.TsTypeName;
+            }
+        }
+
         var s = type.ToString();
         return s switch
         {
@@ -418,20 +452,20 @@ public static class TranspilerEngine
         };
     }
 
-    static string MapTypeSymbol(ITypeSymbol type)
+    static string MapTypeSymbol(ITypeSymbol type, EmitContext ctx)
     {
         if (type is IArrayTypeSymbol arr)
         {
-            return $"{MapTypeSymbol(arr.ElementType)}[]";
+            return $"{MapTypeSymbol(arr.ElementType, ctx)}[]";
         }
         if (type.NullableAnnotation == NullableAnnotation.Annotated && type.IsReferenceType)
         {
-            return $"{MapTypeSymbol(type.WithNullableAnnotation(NullableAnnotation.NotAnnotated))} | null";
+            return $"{MapTypeSymbol(type.WithNullableAnnotation(NullableAnnotation.NotAnnotated), ctx)} | null";
         }
         if (type.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T &&
             type is INamedTypeSymbol nullable && nullable.TypeArguments.Length == 1)
         {
-            return $"{MapTypeSymbol(nullable.TypeArguments[0])} | null";
+            return $"{MapTypeSymbol(nullable.TypeArguments[0], ctx)} | null";
         }
         if (type is INamedTypeSymbol named && named.IsGenericType)
         {
@@ -441,15 +475,20 @@ public static class TranspilerEngine
                     or "System.Collections.Generic.IReadOnlyList<T>"
                     or "System.Collections.Generic.IList<T>")
             {
-                return $"{MapTypeSymbol(named.TypeArguments[0])}[]";
+                return $"{MapTypeSymbol(named.TypeArguments[0], ctx)}[]";
             }
             if (named.TypeArguments.Length == 2 &&
                 def is "System.Collections.Generic.Dictionary<TKey, TValue>"
                     or "System.Collections.Generic.IReadOnlyDictionary<TKey, TValue>"
                     or "System.Collections.Generic.IDictionary<TKey, TValue>")
             {
-                return $"Record<{MapTypeSymbol(named.TypeArguments[0])}, {MapTypeSymbol(named.TypeArguments[1])}>";
+                return $"Record<{MapTypeSymbol(named.TypeArguments[0], ctx)}, {MapTypeSymbol(named.TypeArguments[1], ctx)}>";
             }
+        }
+
+        if (ctx.Registry.Count > 0 && ctx.Registry.TryGet(type.ToDisplayString(), out var mapping))
+        {
+            return mapping.TsTypeName;
         }
         return type.SpecialType switch
         {
@@ -547,11 +586,11 @@ public static class TranspilerEngine
             {
                 var symbolType = ctx.LocalTypeOf(v)
                     ?? throw new NotSupportedException($"Cannot resolve type of for-init '{v.Identifier.Text}'.");
-                tsType = MapTypeSymbol(symbolType);
+                tsType = MapTypeSymbol(symbolType, ctx);
             }
             else
             {
-                tsType = MapType(decl.Type);
+                tsType = MapType(decl.Type, ctx);
             }
             var init = v.Initializer is { } i ? $" = {EmitExpression(i.Value, ctx)}" : string.Empty;
             return $"let {v.Identifier.Text}: {tsType}{init}";
@@ -651,7 +690,7 @@ public static class TranspilerEngine
     static string InferSwitchExpressionResultType(SwitchExpressionSyntax swx, EmitContext ctx)
     {
         var type = ctx.TypeOf(swx);
-        return type is null ? "unknown" : MapTypeSymbol(type);
+        return type is null ? "unknown" : MapTypeSymbol(type, ctx);
     }
 
     static string EmitSwitchPattern(PatternSyntax pattern, EmitContext ctx)
@@ -693,11 +732,11 @@ public static class TranspilerEngine
         {
             var symbolType = ctx.LocalTypeOf(variable)
                 ?? throw new NotSupportedException($"Cannot resolve type of local '{variable.Identifier.Text}'.");
-            tsType = MapTypeSymbol(symbolType);
+            tsType = MapTypeSymbol(symbolType, ctx);
         }
         else
         {
-            tsType = MapType(declaration.Type);
+            tsType = MapType(declaration.Type, ctx);
         }
 
         var initEmit = variable.Initializer is { } init

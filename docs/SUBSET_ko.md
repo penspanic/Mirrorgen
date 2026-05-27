@@ -19,6 +19,7 @@ v0.1 transpiler 가 받아들이는 정확한 명세. 여기 나열되지 않은
 - `Dictionary<K,V>`, `IReadOnlyDictionary<K,V>`, `IDictionary<K,V>` (`Record<K,V>` 로 emit, K 는 string-coercible)
 - `Nullable<T>` (`T | null` 로 emit)
 - Transitive reachability — marked type 에서 도달 가능한 leaf type 은 자체 attribute 불필요
+- Plugin remapping (`IMirrorgenExtension`) — 사용자 정의 plugin 1개가 C# 도메인 primitive (예: `record OrderId(int Value)`) 를 TS primitive 또는 runtime-import 이름으로 매핑. 매핑된 type 은 emit 되지 않고 cross-test fixture 값도 내부 field 만 unwrap.
 
 v0.1 에 지원 안 함:
 - 64-bit 정수 (`long`, `ulong`) — JS Number 로 emit 시 2^53 위로 정밀도 손실. BigInt emit 은 v0.2 로 미룸; 지금은 walker 가 거부.

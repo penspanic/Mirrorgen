@@ -5,65 +5,47 @@
       {
         "args": [
           {
-            "Quantity": 1752227527,
-            "UnitPrice": -1211126343,
-            "Kind": 0,
-            "DiscountValue": -116986367
+            "Id": 1752227527,
+            "Quantity": -1211126343,
+            "UnitPrice": 25718506,
+            "Kind": 2,
+            "DiscountValue": -964038664
           }
         ],
-        "expected": -853550012
+        "expected": 0
       },
       {
         "args": [
           {
-            "Quantity": -964038664,
-            "UnitPrice": -1607840010,
+            "Id": -1607840010,
+            "Quantity": -1267385754,
+            "UnitPrice": -1182260521,
             "Kind": 1,
-            "DiscountValue": 821333699
+            "DiscountValue": 1167815424
           }
         ],
-        "expected": -821333699
+        "expected": -1167815424
       },
       {
         "args": [
           {
-            "Quantity": -1679415356,
-            "UnitPrice": 1167815424,
-            "Kind": 2,
-            "DiscountValue": -1854161698
-          }
-        ],
-        "expected": 0
-      },
-      {
-        "args": [
-          {
-            "Quantity": -1781119875,
-            "UnitPrice": 923436684,
+            "Id": -1686768294,
+            "Quantity": 748161959,
+            "UnitPrice": 1434352037,
             "Kind": 0,
-            "DiscountValue": 801180007
+            "DiscountValue": -212635639
           }
         ],
-        "expected": 0
+        "expected": 1701282932
       },
       {
         "args": [
           {
-            "Quantity": -1399445126,
-            "UnitPrice": -1425575970,
-            "Kind": 2,
-            "DiscountValue": 190752968
-          }
-        ],
-        "expected": 0
-      },
-      {
-        "args": [
-          {
-            "Quantity": -2010722559,
-            "UnitPrice": 229780274,
+            "Id": -356594217,
+            "Quantity": -649717556,
+            "UnitPrice": 1088676441,
             "Kind": 0,
-            "DiscountValue": 1236763738
+            "DiscountValue": 84636554
           }
         ],
         "expected": 0
@@ -71,28 +53,31 @@
       {
         "args": [
           {
-            "Quantity": 875195199,
-            "UnitPrice": -34449635,
-            "Kind": 2,
-            "DiscountValue": 1116417406
+            "Id": 738286661,
+            "Quantity": -60450551,
+            "UnitPrice": 1236763738,
+            "Kind": 1,
+            "DiscountValue": 1559303952
           }
         ],
-        "expected": 0
+        "expected": -1559303952
       },
       {
         "args": [
           {
-            "Quantity": -1610596038,
-            "UnitPrice": 1119974245,
-            "Kind": 0,
-            "DiscountValue": -2138533128
+            "Id": -681450978,
+            "Quantity": 1116417406,
+            "UnitPrice": -1610596038,
+            "Kind": 1,
+            "DiscountValue": -1131424091
           }
         ],
-        "expected": 0
+        "expected": -1014389757
       },
       {
         "args": [
           {
+            "Id": -2138533128,
             "Quantity": -693803893,
             "UnitPrice": 687126210,
             "Kind": 2,
@@ -104,32 +89,11 @@
       {
         "args": [
           {
-            "Quantity": -364789274,
-            "UnitPrice": -1571687283,
-            "Kind": 0,
-            "DiscountValue": -1097623966
-          }
-        ],
-        "expected": 0
-      },
-      {
-        "args": [
-          {
-            "Quantity": -396552310,
-            "UnitPrice": -960343756,
-            "Kind": 0,
-            "DiscountValue": 1119101399
-          }
-        ],
-        "expected": 0
-      },
-      {
-        "args": [
-          {
-            "Quantity": -2022531734,
-            "UnitPrice": -1663525658,
+            "Id": -364789274,
+            "Quantity": -1571687283,
+            "UnitPrice": -630580733,
             "Kind": 2,
-            "DiscountValue": 1349590916
+            "DiscountValue": -396552310
           }
         ],
         "expected": 0
@@ -137,46 +101,98 @@
       {
         "args": [
           {
-            "Quantity": -918602381,
-            "UnitPrice": 2104735999,
-            "Kind": 0,
-            "DiscountValue": -113528902
-          }
-        ],
-        "expected": 0
-      },
-      {
-        "args": [
-          {
-            "Quantity": 450597005,
-            "UnitPrice": 247367678,
-            "Kind": 0,
-            "DiscountValue": -64467024
-          }
-        ],
-        "expected": -1033035976
-      },
-      {
-        "args": [
-          {
-            "Quantity": 1377039912,
-            "UnitPrice": 1358971866,
-            "Kind": 0,
-            "DiscountValue": -1485794150
-          }
-        ],
-        "expected": -1541766872
-      },
-      {
-        "args": [
-          {
-            "Quantity": -940563674,
-            "UnitPrice": 2083199117,
+            "Id": -960343756,
+            "Quantity": -617397959,
+            "UnitPrice": -905924675,
             "Kind": 1,
-            "DiscountValue": -1212666631
+            "DiscountValue": -1663525658
           }
         ],
-        "expected": 1212666631
+        "expected": 1663525658
+      },
+      {
+        "args": [
+          {
+            "Id": 1832246247,
+            "Quantity": 1936332734,
+            "UnitPrice": -305601724,
+            "Kind": 1,
+            "DiscountValue": -199703492
+          }
+        ],
+        "expected": -295697836
+      },
+      {
+        "args": [
+          {
+            "Id": -1316918668,
+            "Quantity": 1690137710,
+            "UnitPrice": -1175253319,
+            "Kind": 0,
+            "DiscountValue": 510405927
+          }
+        ],
+        "expected": -1561214908
+      },
+      {
+        "args": [
+          {
+            "Id": 610245998,
+            "Quantity": 868460944,
+            "UnitPrice": -1485794150,
+            "Kind": 1,
+            "DiscountValue": -159630494
+          }
+        ],
+        "expected": 1904070854
+      },
+      {
+        "args": [
+          {
+            "Id": -33022659,
+            "Quantity": -1212666631,
+            "UnitPrice": -1546186253,
+            "Kind": 1,
+            "DiscountValue": 1778527402
+          }
+        ],
+        "expected": -1778527402
+      },
+      {
+        "args": [
+          {
+            "Id": -1923228099,
+            "Quantity": -2024145967,
+            "UnitPrice": 175476726,
+            "Kind": 1,
+            "DiscountValue": 499257777
+          }
+        ],
+        "expected": -499257777
+      },
+      {
+        "args": [
+          {
+            "Id": 1395381085,
+            "Quantity": 20455300,
+            "UnitPrice": 1054634377,
+            "Kind": 0,
+            "DiscountValue": 278741052
+          }
+        ],
+        "expected": -1910744700
+      },
+      {
+        "args": [
+          {
+            "Id": 2140100309,
+            "Quantity": 2011280415,
+            "UnitPrice": -2125522356,
+            "Kind": 0,
+            "DiscountValue": 1261463371
+          }
+        ],
+        "expected": -2098838096
       }
     ]
   },

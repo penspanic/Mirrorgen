@@ -3,7 +3,10 @@
 The smallest end-to-end Mirrorgen pipeline: a `[Transpile]` record + enum
 and three `[Transpile]` methods mirrored into TypeScript by the **MSBuild
 target**, plus `[GenerateCrossTest]` on the methods proving the two sides
-stay byte-equivalent.
+stay byte-equivalent. A single `IMirrorgenExtension` plugin remaps the
+`OrderId` wrapper struct onto a TS `number`, so the wrapper never crosses
+the boundary even though it shows up in C# record fields and cross-test
+fixture arguments.
 
 ## Layout
 
@@ -11,6 +14,7 @@ stay byte-equivalent.
 Rules/
   Rules.csproj           # imports Mirrorgen.MSBuild's target file
   Pricing.cs             # [Transpile, GenerateCrossTest] members (source of truth)
+  MirrorgenConfig.cs     # IMirrorgenExtension — remaps OrderId -> number
 client/
   package.json           # vitest + typescript
   src/index.ts           # demo consumer

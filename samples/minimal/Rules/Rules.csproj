@@ -14,6 +14,8 @@
         <!-- Also capture C# expected outputs from [GenerateCrossTest] members. -->
         <MirrorgenEmitFixtures>true</MirrorgenEmitFixtures>
         <MirrorgenFixturesOutput>$(MirrorgenOutput)Pricing.fixtures.json</MirrorgenFixturesOutput>
+        <!-- IMirrorgenExtension implementation that maps OrderId -> number. -->
+        <MirrorgenConfig>Mirrorgen.Samples.Minimal.MirrorgenConfig</MirrorgenConfig>
     </PropertyGroup>
 
     <ItemGroup>

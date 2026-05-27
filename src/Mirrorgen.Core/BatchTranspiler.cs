@@ -13,6 +13,9 @@ public static class BatchTranspiler
     /// is empty (no `[Transpile]` members) are skipped.
     /// </summary>
     public static Result TranspileFiles(IEnumerable<string> sourceFiles, string sourceRoot, string outputDir)
+        => TranspileFiles(sourceFiles, sourceRoot, outputDir, TypeMappingRegistry.Empty);
+
+    public static Result TranspileFiles(IEnumerable<string> sourceFiles, string sourceRoot, string outputDir, TypeMappingRegistry registry)
     {
         var src = Path.GetFullPath(sourceRoot);
         var dst = Path.GetFullPath(outputDir);
@@ -26,7 +29,7 @@ public static class BatchTranspiler
             var rel = Path.GetRelativePath(src, fullCs);
 
             var source = File.ReadAllText(fullCs);
-            var ts = TranspilerEngine.TranspileSource(source);
+            var ts = TranspilerEngine.TranspileSource(source, registry);
             if (string.IsNullOrEmpty(ts))
             {
                 skipped++;

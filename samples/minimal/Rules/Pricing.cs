@@ -10,8 +10,12 @@ public enum DiscountKind
     Percent,
 }
 
+// Domain primitive — the IMirrorgenExtension in MirrorgenConfig.cs maps
+// this onto the TS `number` so the generated code never sees the wrapper.
+public readonly record struct OrderId(int Value);
+
 [Transpile]
-public record OrderLine(int Quantity, int UnitPrice, DiscountKind Kind, int DiscountValue);
+public record OrderLine(OrderId Id, int Quantity, int UnitPrice, DiscountKind Kind, int DiscountValue);
 
 public static class LineMath
 {

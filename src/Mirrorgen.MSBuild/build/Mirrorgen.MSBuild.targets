@@ -15,15 +15,23 @@
       attributes (which are evaluated lazily) rather than captured into a
       property at import time.
     -->
+    <!--
+      The plugin (if MirrorgenConfig is set) needs the just-built assembly,
+      so MirrorgenGenerate runs after Build rather than after CoreCompile.
+      Without a plugin it could run earlier; gating on Build is the simplest
+      shape and the incremental check keeps the no-op fast.
+    -->
     <Target Name="MirrorgenGenerate"
-            AfterTargets="CoreCompile"
+            AfterTargets="Build"
             Condition="'$(MirrorgenOutput)' != ''"
-            Inputs="@(Compile)"
+            Inputs="@(Compile);$(TargetPath)"
             Outputs="$(IntermediateOutputPath)mirrorgen.stamp">
         <MakeDir Directories="$(IntermediateOutputPath)" />
         <MirrorgenTask Sources="@(Compile)"
                        SourceRoot="$(MirrorgenSourceRoot)"
-                       OutputDirectory="$(MirrorgenOutput)" />
+                       OutputDirectory="$(MirrorgenOutput)"
+                       AssemblyPath="$(TargetPath)"
+                       MirrorgenConfig="$(MirrorgenConfig)" />
         <Touch Files="$(IntermediateOutputPath)mirrorgen.stamp" AlwaysCreate="true" />
     </Target>
 
@@ -40,7 +48,8 @@
             Outputs="$(IntermediateOutputPath)mirrorgen.fixtures.stamp">
         <MakeDir Directories="$(IntermediateOutputPath)" />
         <MirrorgenFixturesTask AssemblyPath="$(TargetPath)"
-                               OutputPath="$(MirrorgenFixturesOutput)" />
+                               OutputPath="$(MirrorgenFixturesOutput)"
+                               MirrorgenConfig="$(MirrorgenConfig)" />
         <Touch Files="$(IntermediateOutputPath)mirrorgen.fixtures.stamp" AlwaysCreate="true" />
     </Target>
 

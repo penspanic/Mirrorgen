@@ -19,6 +19,7 @@ Supported:
 - `Dictionary<K,V>`, `IReadOnlyDictionary<K,V>`, `IDictionary<K,V>` (emitted as `Record<K,V>` with string-coercible K)
 - `Nullable<T>` (emitted as `T | null`)
 - Transitive reachability — leaf types reached from a marked type don't need their own attribute
+- Plugin remapping (`IMirrorgenExtension`) — a single user-defined plugin can map a C# domain primitive (e.g. `record OrderId(int Value)`) onto a TS primitive or a runtime-imported name. Mapped types are never emitted; their fixture values are unwrapped to the inner field.
 
 Not supported in v0.1:
 - 64-bit integers (`long`, `ulong`) — would lose precision above 2^53 as a JS Number. BigInt emission is deferred to v0.2; for now the walker rejects them.

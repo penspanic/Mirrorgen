@@ -97,8 +97,8 @@ public sealed class MirrorgenConfig : IMirrorgenExtension
 {
     public void Configure(IMirrorgenBuilder b)
     {
-        b.MapType<OrderId>(ts => ts.AsPrimitive("number"));
-        b.MapType<Money>(ts => ts.RuntimeImport("Money"));
+        b.MapType<OrderId>().AsPrimitive("number");
+        b.MapType<Money>().RuntimeImport("Money");
     }
 }
 ```
