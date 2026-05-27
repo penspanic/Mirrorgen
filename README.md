@@ -71,9 +71,12 @@ See [`docs/CONCEPT.md`](docs/CONCEPT.md) for the precise subset spec and roadmap
 
 ## Status
 
-**Pre-alpha.** Design is being finalized. No published packages yet.
+**Alpha (v0.1.0-alpha.1).** Walker subset is feature-complete for v0.1,
+plugin discovery works end-to-end, and the cross-validation harness keeps
+the C# and TS sides byte-equivalent on every push. The API is still
+subject to change while the early adopters shake it out.
 
-Watch / star if you want to be pinged when v0.1.0 lands.
+Watch / star to be pinged when v0.1.0 stable lands.
 
 ## How it will fit into a project
 
