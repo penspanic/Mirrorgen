@@ -33,7 +33,11 @@ jobs:
         run: dotnet test Mirrorgen.sln --no-build -c Release --verbosity normal
 
       - name: Pack (verify packaging)
-        run: dotnet pack Mirrorgen.sln --no-build -c Release -o artifacts
+        # `--no-build` was dropped because samples/minimal's ProjectReference
+        # graph causes dotnet pack to re-invoke Build on the publishable
+        # projects, which then collides with NoBuild=true (NETSDK1085). The
+        # pack step does its own incremental build pass instead.
+        run: dotnet pack Mirrorgen.sln -c Release -o artifacts
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@v7
@@ -41,7 +45,10 @@ jobs:
           name: nuget-packages
           path: artifacts/*.nupkg
           if-no-files-found: error
-          retention-days: 14
+          # Short retention — these are smoke-test artifacts to sanity-check
+          # packaging on every push. The actual release packages are
+          # produced by release.yml when a tag is pushed.
+          retention-days: 3
 
   runtime-ts:
     name: runtime-ts build + test
