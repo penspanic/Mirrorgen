@@ -1305,9 +1305,46 @@ public static class TranspilerEngine
                         ea.ArgumentList.Arguments.Select(a => EmitExpression(a.Expression, ctx)));
                     return $"{EmitExpression(ea.Expression, ctx)}[{indices}]";
                 }
+            case CastExpressionSyntax cast:
+                return EmitCast(cast, ctx);
             default:
                 throw new NotSupportedException($"Unsupported expression: {expr.Kind()}");
         }
+    }
+
+    static string EmitCast(CastExpressionSyntax cast, EmitContext ctx)
+    {
+        var inner = EmitExpression(cast.Expression, ctx);
+        var targetSymbol = ctx.SymbolForTypeSyntax(cast.Type);
+        if (targetSymbol is null)
+        {
+            return $"({inner})";
+        }
+        var srcSpecial = ctx.TypeOf(cast.Expression)?.SpecialType ?? SpecialType.None;
+        var srcIsBigInt = srcSpecial == SpecialType.System_Int64 || srcSpecial == SpecialType.System_UInt64;
+
+        switch (targetSymbol.SpecialType)
+        {
+            case SpecialType.System_Byte:
+                return srcIsBigInt
+                    ? $"Number({inner} & 0xffn)"
+                    : $"(({inner}) & 0xff)";
+            case SpecialType.System_SByte:
+                return srcIsBigInt
+                    ? $"((Number({inner} & 0xffn) << 24) >> 24)"
+                    : $"((({inner}) << 24) >> 24)";
+            case SpecialType.System_Int16:
+                return srcIsBigInt
+                    ? $"((Number({inner} & 0xffffn) << 16) >> 16)"
+                    : $"((({inner}) << 16) >> 16)";
+            case SpecialType.System_UInt16:
+                return srcIsBigInt
+                    ? $"Number({inner} & 0xffffn)"
+                    : $"(({inner}) & 0xffff)";
+        }
+        // Other casts (int/uint/long/float/double) intentionally fall through to a
+        // bare paren wrap for now — future issues extend this set.
+        return $"({inner})";
     }
 
     static string EmitInvocation(InvocationExpressionSyntax inv, EmitContext ctx)
