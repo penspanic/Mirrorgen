@@ -805,10 +805,28 @@ public static class TranspilerEngine
                                     .Append(": ").Append(tsType)
                                     .Append(" = ").Append(literal).AppendLine(";");
                             }
+                            else if (isStatic && variable.Initializer?.Value is { } staticInit
+                                && (staticInit is ArrayCreationExpressionSyntax
+                                    || staticInit is ImplicitArrayCreationExpressionSyntax
+                                    || staticInit is ObjectCreationExpressionSyntax
+                                    || staticInit is CollectionExpressionSyntax))
+                            {
+                                // `static readonly T[] X = new T[] { ... }` or
+                                // `static readonly T X = new T(...)` — emit at module
+                                // scope as `const X: T = <emitted>;` so transpiled
+                                // bodies that read it (e.g. `X[i]`) resolve.
+                                var tsType = MapType(field.Declaration.Type, ctx);
+                                var keyword = isPublic ? "export const " : "const ";
+                                var initEmit = EmitExpression(staticInit, ctx);
+                                consts.Append(keyword).Append(member)
+                                    .Append(": ").Append(tsType)
+                                    .Append(" = ").Append(initEmit).AppendLine(";");
+                            }
                             else if (isConst || isStatic)
                             {
-                                // Static / const without a literal we can format — skip rather
-                                // than pretend it's an instance interface member.
+                                // Static / const without a recognisable initializer —
+                                // skip rather than pretend it's an instance interface
+                                // member.
                             }
                             else
                             {
