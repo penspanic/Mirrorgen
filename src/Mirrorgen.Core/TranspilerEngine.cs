@@ -188,6 +188,25 @@ public static class TranspilerEngine
                 if (emit.Add(m)) queue.Enqueue(m);
             }
         }
+        // Method-declaration index: walked from invocation expressions in
+        // method bodies so private/internal helpers inside a class-level
+        // [Transpile] module pull in transitively. (Public-static seeding
+        // alone misses helpers like HilbertCurve.Rotate.) Same-file only —
+        // sibling trees seed their own emit pass.
+        var methodByName = new Dictionary<(string ContainingType, string MethodName), MethodDeclarationSyntax>();
+        foreach (var cls in tree.GetCompilationUnitRoot().DescendantNodes().OfType<ClassDeclarationSyntax>())
+        {
+            // Only index methods inside classes that themselves have class-level
+            // [Transpile] — otherwise an unrelated helper class would get pulled
+            // in by name collision.
+            if (!HasTranspileAttribute(cls.AttributeLists)) continue;
+            foreach (var m in cls.Members.OfType<MethodDeclarationSyntax>())
+            {
+                if (!m.Modifiers.Any(t => t.IsKind(SyntaxKind.StaticKeyword))) continue;
+                methodByName[(cls.Identifier.Text, m.Identifier.Text)] = m;
+            }
+        }
+
         while (queue.Count > 0)
         {
             var n = queue.Dequeue();
@@ -196,6 +215,26 @@ public static class TranspilerEngine
                 if (typeByName.TryGetValue(refName, out var refNode) && emit.Add(refNode))
                 {
                     queue.Enqueue(refNode);
+                }
+            }
+            // Pull in same-class static helpers reached via invocation.
+            if (n is MethodDeclarationSyntax callerMethod &&
+                callerMethod.Parent is ClassDeclarationSyntax callerCls)
+            {
+                foreach (var invSyntax in callerMethod.DescendantNodes().OfType<InvocationExpressionSyntax>())
+                {
+                    string? calleeName = invSyntax.Expression switch
+                    {
+                        IdentifierNameSyntax id => id.Identifier.Text,
+                        MemberAccessExpressionSyntax ma => ma.Name.Identifier.Text,
+                        _ => null,
+                    };
+                    if (calleeName is null) continue;
+                    if (methodByName.TryGetValue((callerCls.Identifier.Text, calleeName), out var calleeDecl) &&
+                        emit.Add(calleeDecl))
+                    {
+                        queue.Enqueue(calleeDecl);
+                    }
                 }
             }
         }
@@ -316,6 +355,9 @@ public static class TranspilerEngine
         m.Modifiers.Any(t => t.IsKind(SyntaxKind.PublicKeyword)) &&
         m.Modifiers.Any(t => t.IsKind(SyntaxKind.StaticKeyword));
 
+    static bool IsAnyStaticMethod(MethodDeclarationSyntax m) =>
+        m.Modifiers.Any(t => t.IsKind(SyntaxKind.StaticKeyword));
+
     static bool HasAnyPublicStaticMember(ClassDeclarationSyntax cls)
     {
         foreach (var member in cls.Members)
@@ -402,6 +444,35 @@ public static class TranspilerEngine
         public TypeMappingRegistry Registry { get; }
         public HashSet<string> UsedHelpers { get; } = new(StringComparer.Ordinal);
 
+        // ref/out param names of the method currently being emitted. Used so
+        // nested return statements (inside an if/for/while body) can rewrite
+        // themselves into the destructured-tuple shape. Reset per method.
+        public List<string> CurrentRefNames { get; private set; } = new();
+        public bool CurrentMethodIsVoidWithRefs { get; private set; }
+
+        public IDisposable PushRefMethodScope(List<string> refNames, bool isVoidWithRefs)
+        {
+            var prevNames = CurrentRefNames;
+            var prevVoid = CurrentMethodIsVoidWithRefs;
+            CurrentRefNames = refNames;
+            CurrentMethodIsVoidWithRefs = isVoidWithRefs;
+            return new ScopePopper(this, prevNames, prevVoid);
+        }
+
+        sealed class ScopePopper : IDisposable
+        {
+            readonly EmitContext _ctx;
+            readonly List<string> _prevNames;
+            readonly bool _prevVoid;
+            public ScopePopper(EmitContext ctx, List<string> prevNames, bool prevVoid)
+            { _ctx = ctx; _prevNames = prevNames; _prevVoid = prevVoid; }
+            public void Dispose()
+            {
+                _ctx.CurrentRefNames = _prevNames;
+                _ctx.CurrentMethodIsVoidWithRefs = _prevVoid;
+            }
+        }
+
         public EmitContext(SemanticModel model, TypeMappingRegistry registry)
         {
             _model = model;
@@ -412,6 +483,12 @@ public static class TranspilerEngine
         {
             var info = _model.GetTypeInfo(expr);
             return info.Type ?? info.ConvertedType;
+        }
+
+        public ITypeSymbol? ConvertedTypeOf(ExpressionSyntax expr)
+        {
+            var info = _model.GetTypeInfo(expr);
+            return info.ConvertedType ?? info.Type;
         }
 
         public bool IsInt32(ExpressionSyntax expr) =>
@@ -473,6 +550,29 @@ public static class TranspilerEngine
         return refs.ToArray();
     }
 
+    static bool IsRefLike(ParameterSyntax p)
+    {
+        foreach (var mod in p.Modifiers)
+        {
+            var k = mod.Kind();
+            if (k == SyntaxKind.RefKeyword || k == SyntaxKind.OutKeyword)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static List<ParameterSyntax> CollectRefParams(MethodDeclarationSyntax method)
+    {
+        var list = new List<ParameterSyntax>();
+        foreach (var p in method.ParameterList.Parameters)
+        {
+            if (IsRefLike(p)) list.Add(p);
+        }
+        return list;
+    }
+
     static string EmitMethod(MethodDeclarationSyntax method, EmitContext ctx)
     {
         var name = ReadEmitName(method.AttributeLists) ?? method.Identifier.Text;
@@ -489,7 +589,33 @@ public static class TranspilerEngine
             ? $"<{string.Join(", ", tpl.Parameters.Select(p => p.Identifier.Text))}>"
             : string.Empty;
 
-        var returnType = MapType(method.ReturnType, ctx);
+        var refParams = CollectRefParams(method);
+        var isVoid = method.ReturnType is PredefinedTypeSyntax pts && pts.Keyword.IsKind(SyntaxKind.VoidKeyword);
+
+        string returnType;
+        if (refParams.Count == 0)
+        {
+            returnType = MapType(method.ReturnType, ctx);
+        }
+        else
+        {
+            // ref/out params land in the return tuple — JS has no by-reference
+            // call semantics so the only honest emit is to return everything
+            // the method "writes" and let the caller destructure.
+            var refTypes = refParams.Select(p => MapType(p.Type!, ctx)).ToList();
+            if (isVoid)
+            {
+                returnType = refTypes.Count == 1 ? refTypes[0] : "[" + string.Join(", ", refTypes) + "]";
+            }
+            else
+            {
+                var origRet = MapType(method.ReturnType, ctx);
+                var positions = new List<string> { origRet };
+                positions.AddRange(refTypes);
+                returnType = "[" + string.Join(", ", positions) + "]";
+            }
+        }
+
         var parameters = string.Join(
             ", ",
             method.ParameterList.Parameters.Select(p =>
@@ -499,7 +625,7 @@ public static class TranspilerEngine
 
         var sb = new StringBuilder();
         sb.Append("export function ").Append(name).Append(typeParams).Append('(').Append(parameters).Append("): ").Append(returnType).AppendLine(" {");
-        sb.Append(EmitMethodBody(method, ctx));
+        sb.Append(EmitMethodBody(method, ctx, refParams, isVoid));
         sb.AppendLine("}");
         return sb.ToString();
     }
@@ -933,6 +1059,11 @@ public static class TranspilerEngine
             }
         }
 
+        if (type is TupleTypeSyntax tuple)
+        {
+            return MapTupleType(tuple, ctx);
+        }
+
         var s = type.ToString();
         return s switch
         {
@@ -958,11 +1089,59 @@ public static class TranspilerEngine
         };
     }
 
+    static string MapTupleType(TupleTypeSyntax tuple, EmitContext ctx)
+    {
+        // Named elements emit as `{ A: T1; B: T2 }` (object type), unnamed as
+        // `[T1, T2]` (TS tuple type). Mixing names with un-named elements is
+        // invalid C# at parse time so we don't have to handle the partial case.
+        var allNamed = tuple.Elements.All(e => e.Identifier.Text.Length > 0);
+        if (allNamed)
+        {
+            var fields = string.Join("; ",
+                tuple.Elements.Select(e => $"{e.Identifier.Text}: {MapType(e.Type, ctx)}"));
+            return "{ " + fields + " }";
+        }
+        var positional = string.Join(", ", tuple.Elements.Select(e => MapType(e.Type, ctx)));
+        return "[" + positional + "]";
+    }
+
+    static string MapTupleSymbol(INamedTypeSymbol tuple, EmitContext ctx)
+    {
+        var elements = tuple.TupleElements;
+        // Tuple elements have positional default names (`Item1` / `Item2`) when
+        // the source didn't name them. CorrespondingTupleField stays null for
+        // explicitly named elements — that's how we tell apart `(x, y)` (no
+        // names) vs `(IX: x, IY: y)` (named).
+        var allExplicitlyNamed = !elements.IsDefault && elements.Length > 0 &&
+            elements.All(e => e.CorrespondingTupleField is not null && !e.IsImplicitlyDeclared && e.Name != null &&
+                              !e.Name.StartsWith("Item", StringComparison.Ordinal));
+        // The check above is brittle (Item1/Item2 collisions when the user
+        // explicitly names a field "Item1"). Use the simpler rule: if every
+        // element's name is the same as its CorrespondingTupleField name and
+        // matches the default Item-N pattern, it's positional.
+        bool isPositional = elements.Length > 0 && elements.All(e =>
+            e.CorrespondingTupleField is { } ctf && ctf.Name == e.Name &&
+            e.Name.StartsWith("Item", StringComparison.Ordinal) &&
+            int.TryParse(e.Name.AsSpan(4), out _));
+        if (!isPositional)
+        {
+            var fields = string.Join("; ",
+                elements.Select(e => $"{e.Name}: {MapTypeSymbol(e.Type, ctx)}"));
+            return "{ " + fields + " }";
+        }
+        var positional = string.Join(", ", elements.Select(e => MapTypeSymbol(e.Type, ctx)));
+        return "[" + positional + "]";
+    }
+
     static string MapTypeSymbol(ITypeSymbol type, EmitContext ctx)
     {
         if (type is IArrayTypeSymbol arr)
         {
             return $"{MapTypeSymbol(arr.ElementType, ctx)}[]";
+        }
+        if (type is INamedTypeSymbol tupleType && tupleType.IsTupleType)
+        {
+            return MapTupleSymbol(tupleType, ctx);
         }
         if (type.NullableAnnotation == NullableAnnotation.Annotated && type.IsReferenceType)
         {
@@ -1014,30 +1193,76 @@ public static class TranspilerEngine
     const string BodyIndent = "  ";
 
     static string EmitMethodBody(MethodDeclarationSyntax method, EmitContext ctx)
+        => EmitMethodBody(method, ctx, new List<ParameterSyntax>(), isVoid: method.ReturnType is PredefinedTypeSyntax pts && pts.Keyword.IsKind(SyntaxKind.VoidKeyword));
+
+    static string EmitMethodBody(MethodDeclarationSyntax method, EmitContext ctx, List<ParameterSyntax> refParams, bool isVoid)
     {
+        var refNames = refParams.Select(p => p.Identifier.Text).ToList();
         if (method.ExpressionBody is { } eb)
         {
+            if (refParams.Count > 0)
+            {
+                throw new NotSupportedException($"Expression-bodied methods with ref/out params are not supported on '{method.Identifier.Text}'.");
+            }
             return $"{BodyIndent}return {EmitExpression(eb.Expression, ctx)};\n";
         }
         if (method.Body is { } block)
         {
+            using var _ = ctx.PushRefMethodScope(refNames, isVoid && refNames.Count > 0);
             var sb = new StringBuilder();
             foreach (var stmt in block.Statements)
             {
                 sb.Append(EmitStatement(stmt, ctx, BodyIndent));
+            }
+            // Void method with ref/out params has no explicit `return` — append
+            // a synthetic one carrying the ref values so the caller can
+            // destructure. Non-void cases must already return on every path
+            // (C# enforces it), and EmitStatement rewrote those.
+            if (refParams.Count > 0 && isVoid && !EndsWithReturn(block))
+            {
+                sb.Append(BodyIndent).Append("return ").Append(EmitRefReturnExpression(refNames, isVoid)).AppendLine(";");
             }
             return sb.ToString();
         }
         throw new NotSupportedException($"Method '{method.Identifier.Text}' has no body.");
     }
 
+    static bool EndsWithReturn(BlockSyntax block)
+    {
+        if (block.Statements.Count == 0) return false;
+        var last = block.Statements[block.Statements.Count - 1];
+        return last is ReturnStatementSyntax;
+    }
+
+    static string EmitRefReturnExpression(List<string> refNames, bool isVoid, string? originalReturnExpr = null)
+    {
+        if (isVoid)
+        {
+            return refNames.Count == 1 ? refNames[0] : "[" + string.Join(", ", refNames) + "]";
+        }
+        var positions = new List<string> { originalReturnExpr ?? "undefined" };
+        positions.AddRange(refNames);
+        return "[" + string.Join(", ", positions) + "]";
+    }
+
     static string EmitStatement(StatementSyntax stmt, EmitContext ctx, string indent)
     {
+        var refNames = ctx.CurrentRefNames;
+        var isVoidWithRefs = ctx.CurrentMethodIsVoidWithRefs;
         switch (stmt)
         {
             case ReturnStatementSyntax { Expression: null }:
+                if (refNames.Count > 0)
+                {
+                    return $"{indent}return {EmitRefReturnExpression(refNames, isVoidWithRefs)};\n";
+                }
                 return $"{indent}return;\n";
             case ReturnStatementSyntax ret:
+                if (refNames.Count > 0)
+                {
+                    var orig = EmitExpression(ret.Expression!, ctx);
+                    return $"{indent}return {EmitRefReturnExpression(refNames, isVoidWithRefs, orig)};\n";
+                }
                 return $"{indent}return {EmitExpression(ret.Expression!, ctx)};\n";
             case BlockSyntax block:
                 var sb = new StringBuilder();
@@ -1051,6 +1276,11 @@ public static class TranspilerEngine
             case LocalDeclarationStatementSyntax localDecl:
                 return EmitLocalDeclaration(localDecl, ctx, indent);
             case ExpressionStatementSyntax exprStmt:
+                if (exprStmt.Expression is InvocationExpressionSyntax callee &&
+                    TryEmitRefInvocationStatement(callee, ctx, indent, out var refStmt))
+                {
+                    return refStmt;
+                }
                 return $"{indent}{EmitExpression(exprStmt.Expression, ctx)};\n";
             case ForStatementSyntax forStmt:
                 return EmitForStatement(forStmt, ctx, indent);
@@ -1078,6 +1308,8 @@ public static class TranspilerEngine
                 return $"{indent}break;\n";
             case ContinueStatementSyntax:
                 return $"{indent}continue;\n";
+            case ThrowStatementSyntax thr:
+                return EmitThrow(thr, ctx, indent);
             default:
                 throw new NotSupportedException($"Unsupported statement: {stmt.Kind()}");
         }
@@ -1445,28 +1677,36 @@ public static class TranspilerEngine
     static string EmitLocalDeclaration(LocalDeclarationStatementSyntax local, EmitContext ctx, string indent)
     {
         var declaration = local.Declaration;
-        if (declaration.Variables.Count != 1)
+        if (declaration.Variables.Count == 0)
         {
-            throw new NotSupportedException("Multi-variable declarations are not yet supported.");
+            throw new NotSupportedException("Empty local declaration.");
         }
-        var variable = declaration.Variables[0];
+        // Multi-variable declarations like `int x = 1, y = 2;` get split into
+        // one TS `let` per variable. Each variable's individual type is
+        // resolved by the semantic model so we don't lose anything to the
+        // shared `int` type syntax — they all map identically here anyway.
+        var sb = new StringBuilder();
+        foreach (var variable in declaration.Variables)
+        {
+            string tsType;
+            if (declaration.Type.IsVar)
+            {
+                var symbolType = ctx.LocalTypeOf(variable)
+                    ?? throw new NotSupportedException($"Cannot resolve type of local '{variable.Identifier.Text}'.");
+                tsType = MapTypeSymbol(symbolType, ctx);
+            }
+            else
+            {
+                tsType = MapType(declaration.Type, ctx);
+            }
 
-        string tsType;
-        if (declaration.Type.IsVar)
-        {
-            var symbolType = ctx.LocalTypeOf(variable)
-                ?? throw new NotSupportedException($"Cannot resolve type of local '{variable.Identifier.Text}'.");
-            tsType = MapTypeSymbol(symbolType, ctx);
+            var initEmit = variable.Initializer is { } init
+                ? $" = {EmitExpression(init.Value, ctx)}"
+                : string.Empty;
+            sb.Append(indent).Append("let ").Append(variable.Identifier.Text)
+                .Append(": ").Append(tsType).Append(initEmit).AppendLine(";");
         }
-        else
-        {
-            tsType = MapType(declaration.Type, ctx);
-        }
-
-        var initEmit = variable.Initializer is { } init
-            ? $" = {EmitExpression(init.Value, ctx)}"
-            : string.Empty;
-        return $"{indent}let {variable.Identifier.Text}: {tsType}{initEmit};\n";
+        return sb.ToString();
     }
 
     static string EmitIf(IfStatementSyntax ifs, EmitContext ctx, string indent, bool leadIndent)
@@ -1557,6 +1797,16 @@ public static class TranspilerEngine
                         {
                             return $"{EmitExpression(member.Expression, ctx)}.length";
                         }
+                        // Math.PI / Math.E: keep the named TS constant so the
+                        // emitted code reads naturally. Without this, the
+                        // generic const-field inliner below would replace
+                        // `Math.PI` with its literal value (`3.141592653589793`).
+                        var receiverDisplay = receiverType.ToDisplayString();
+                        if ((receiverDisplay == "System.Math" || receiverDisplay == "System.MathF")
+                            && memberName is "PI" or "E" or "Tau")
+                        {
+                            return $"Math.{memberName}";
+                        }
                     }
                     // Cross-class const reference: `OtherClass.SomeConst` inlines to
                     // the literal value via Roslyn's constant evaluation. Enum
@@ -1613,9 +1863,119 @@ public static class TranspilerEngine
                 }
             case CastExpressionSyntax cast:
                 return EmitCast(cast, ctx);
+            case InterpolatedStringExpressionSyntax interp:
+                return EmitInterpolatedString(interp, ctx);
+            case TupleExpressionSyntax tupleExpr:
+                return EmitTupleExpression(tupleExpr, ctx);
             default:
                 throw new NotSupportedException($"Unsupported expression: {expr.Kind()}");
         }
+    }
+
+    static string EmitTupleExpression(TupleExpressionSyntax tupleExpr, EmitContext ctx)
+    {
+        // Element names come from one of two sources:
+        //   1. Inline syntax `(IX: x, IY: y)` — read straight off the argument
+        //   2. Target type (the method's declared return type, a local's
+        //      declared tuple type, etc.) — read off Roslyn's converted type.
+        // If neither names the elements, emit as a positional TS tuple
+        // `[expr1, expr2]` and let the consumer decide.
+        // ConvertedType is the target tuple — the literal's own inferred Type
+        // borrows names from the argument identifiers (e.g. `(x, y)` becomes
+        // `(int x, int y)` not `(int IX, int IY)`), which is the opposite of
+        // what we want for return-position emit.
+        var converted = ctx.ConvertedTypeOf(tupleExpr) as INamedTypeSymbol;
+        var args = tupleExpr.Arguments;
+        var fields = new List<string>(args.Count);
+        bool anyNamed = false;
+
+        for (int i = 0; i < args.Count; i++)
+        {
+            var arg = args[i];
+            string? name = arg.NameColon?.Name.Identifier.Text;
+            if (name is null && converted is { IsTupleType: true } &&
+                i < converted.TupleElements.Length)
+            {
+                var ctf = converted.TupleElements[i];
+                if (ctf.CorrespondingTupleField is { } field && field.Name == ctf.Name &&
+                    field.Name.StartsWith("Item", StringComparison.Ordinal) &&
+                    int.TryParse(field.Name.AsSpan(4), out _))
+                {
+                    // Default Item-N — leave as positional.
+                }
+                else
+                {
+                    name = ctf.Name;
+                }
+            }
+            var valueExpr = EmitExpression(arg.Expression, ctx);
+            if (name is not null)
+            {
+                anyNamed = true;
+                fields.Add($"{name}: {valueExpr}");
+            }
+            else
+            {
+                fields.Add(valueExpr);
+            }
+        }
+
+        if (anyNamed)
+        {
+            // Backfill positional entries with Item-N names so the TS object
+            // shape stays consistent. If the consumer didn't name some args,
+            // they get Item1/Item2/... so the output is still a valid object.
+            for (int i = 0; i < fields.Count; i++)
+            {
+                if (!fields[i].Contains(':'))
+                {
+                    fields[i] = $"Item{i + 1}: {fields[i]}";
+                }
+            }
+            return "{ " + string.Join(", ", fields) + " }";
+        }
+        return "[" + string.Join(", ", fields) + "]";
+    }
+
+    static string EmitInterpolatedString(InterpolatedStringExpressionSyntax interp, EmitContext ctx)
+    {
+        // C# $"…" → TS `…`. Each InterpolatedStringTextSyntax keeps the raw
+        // text run; each InterpolationSyntax holds an expression.
+        // Format clauses (`:F2` etc.) and alignment (`,5`) aren't supported
+        // — they'd need explicit toFixed/padStart shims we don't have yet.
+        var sb = new StringBuilder("`");
+        foreach (var part in interp.Contents)
+        {
+            switch (part)
+            {
+                case InterpolatedStringTextSyntax text:
+                    foreach (var ch in text.TextToken.ValueText)
+                    {
+                        switch (ch)
+                        {
+                            case '`': sb.Append("\\`"); break;
+                            case '\\': sb.Append("\\\\"); break;
+                            case '$': sb.Append("\\$"); break;
+                            case '\n': sb.Append("\\n"); break;
+                            case '\r': sb.Append("\\r"); break;
+                            default: sb.Append(ch); break;
+                        }
+                    }
+                    break;
+                case InterpolationSyntax intr:
+                    if (intr.AlignmentClause is not null || intr.FormatClause is not null)
+                    {
+                        throw new NotSupportedException(
+                            "Interpolation alignment / format clauses (`,N` / `:fmt`) are not supported.");
+                    }
+                    sb.Append("${").Append(EmitExpression(intr.Expression, ctx)).Append('}');
+                    break;
+                default:
+                    throw new NotSupportedException($"Unsupported interpolated content: {part.Kind()}");
+            }
+        }
+        sb.Append('`');
+        return sb.ToString();
     }
 
     static string EmitCast(CastExpressionSyntax cast, EmitContext ctx)
@@ -1647,10 +2007,69 @@ public static class TranspilerEngine
                 return srcIsBigInt
                     ? $"Number({inner} & 0xffffn)"
                     : $"(({inner}) & 0xffff)";
+            case SpecialType.System_UInt32:
+                // `(uint)x` reinterprets sign. JS `>>> 0` does the same:
+                // forces operand into uint32 land before further arithmetic.
+                // Without this, `(uint)-1 >= (uint)5` (true in C#) emits as
+                // `-1 >= 5` (false in JS) — silent correctness break.
+                return srcIsBigInt
+                    ? $"Number(BigInt.asUintN(32, {inner}))"
+                    : $"(({inner}) >>> 0)";
         }
-        // Other casts (int/uint/long/float/double) intentionally fall through to a
+        // Other casts (int/long/float/double) intentionally fall through to a
         // bare paren wrap for now — future issues extend this set.
         return $"({inner})";
+    }
+
+    static bool TryEmitRefInvocationStatement(
+        InvocationExpressionSyntax inv, EmitContext ctx, string indent, out string emit)
+    {
+        emit = string.Empty;
+        var target = ctx.InvocationTarget(inv);
+        if (target is null) return false;
+        // Pick out ref/out param positions on the callee.
+        var refPositions = new List<int>();
+        for (int i = 0; i < target.Parameters.Length; i++)
+        {
+            var refKind = target.Parameters[i].RefKind;
+            if (refKind == RefKind.Ref || refKind == RefKind.Out)
+            {
+                refPositions.Add(i);
+            }
+        }
+        if (refPositions.Count == 0) return false;
+
+        // Build the destructure-LHS from the caller's argument expressions at
+        // those positions. The caller side is e.g. `Rotate(s, ref x, ref y, rx, ry)`
+        // — each ref/out arg is an IdentifierName we just lift verbatim.
+        var lhs = new List<string>();
+        foreach (var pos in refPositions)
+        {
+            if (pos >= inv.ArgumentList.Arguments.Count) return false;
+            var argExpr = inv.ArgumentList.Arguments[pos].Expression;
+            lhs.Add(EmitExpression(argExpr, ctx));
+        }
+
+        var callExpr = EmitExpression(inv, ctx);
+        var isVoid = target.ReturnsVoid;
+        if (isVoid)
+        {
+            if (lhs.Count == 1)
+            {
+                emit = $"{indent}{lhs[0]} = {callExpr};\n";
+            }
+            else
+            {
+                emit = $"{indent}[{string.Join(", ", lhs)}] = {callExpr};\n";
+            }
+            return true;
+        }
+        // Non-void ref-method called as a statement — original return is
+        // discarded but ref values still need to land. Use a leading `_`.
+        var positions = new List<string> { "_" };
+        positions.AddRange(lhs);
+        emit = $"{indent}[{string.Join(", ", positions)}] = {callExpr};\n";
+        return true;
     }
 
     static string EmitInvocation(InvocationExpressionSyntax inv, EmitContext ctx)
@@ -1815,6 +2234,69 @@ public static class TranspilerEngine
         return false;
     }
 
+    // System.Exception subclasses → JS error constructors. Anything not in
+    // the map falls back to plain `Error`. Mirrorgen does not transpile
+    // try/catch — these emit so callers that *do* handle errors on the TS
+    // side (RangeError-aware code etc.) keep working through the boundary.
+    static readonly System.Collections.Generic.Dictionary<string, string> ExceptionTypeMap = new(StringComparer.Ordinal)
+    {
+        { "ArgumentOutOfRangeException", "RangeError" },
+        { "IndexOutOfRangeException", "RangeError" },
+        { "OverflowException", "RangeError" },
+        { "ArgumentNullException", "TypeError" },
+        { "ArgumentException", "TypeError" },
+        { "FormatException", "TypeError" },
+        { "InvalidCastException", "TypeError" },
+    };
+
+    static string MapExceptionType(string csName)
+        => ExceptionTypeMap.TryGetValue(csName, out var js) ? js : "Error";
+
+    static string EmitThrow(ThrowStatementSyntax thr, EmitContext ctx, string indent)
+    {
+        if (thr.Expression is not ObjectCreationExpressionSyntax oce)
+        {
+            // `throw;` (re-throw) — outside Mirrorgen's surface; only catch
+            // blocks would emit it, and we don't transpile try/catch.
+            throw new NotSupportedException("Bare `throw;` is not supported — Mirrorgen does not transpile try/catch.");
+        }
+
+        var jsError = oce.Type switch
+        {
+            IdentifierNameSyntax i => MapExceptionType(i.Identifier.Text),
+            QualifiedNameSyntax q => MapExceptionType(q.Right.Identifier.Text),
+            _ => "Error",
+        };
+
+        // Pick the first string-typed argument as the message. C# patterns
+        // like `throw new ArgumentOutOfRangeException(nameof(x), $"x out of range")`
+        // have nameof() as the first arg (parameter name) and the message
+        // second — we want the latter on the TS side.
+        string message = "\"\"";
+        if (oce.ArgumentList is { } args)
+        {
+            foreach (var a in args.Arguments)
+            {
+                if (a.Expression is InvocationExpressionSyntax ie &&
+                    ie.Expression is IdentifierNameSyntax id &&
+                    id.Identifier.Text == "nameof")
+                {
+                    continue;
+                }
+                var argType = ctx.TypeOf(a.Expression);
+                if (argType?.SpecialType == SpecialType.System_String ||
+                    a.Expression is InterpolatedStringExpressionSyntax ||
+                    a.Expression is LiteralExpressionSyntax lit && lit.IsKind(SyntaxKind.StringLiteralExpression))
+                {
+                    message = EmitExpression(a.Expression, ctx);
+                    break;
+                }
+            }
+        }
+
+        return $"{indent}throw new {jsError}({message});\n";
+    }
+
     // System.Math / System.MathF members whose semantics we trust to be
     // bit-equivalent to JS Math.*. Methods that diverge (Round's banker's
     // rounding, Truncate's sign behaviour around -0, etc.) are intentionally
@@ -1856,6 +2338,19 @@ public static class TranspilerEngine
         foreach (var attr in method.GetAttributes())
         {
             if (attr.AttributeClass?.ToDisplayString() == "Mirrorgen.TranspileAttribute") return true;
+        }
+        // Class-level [Transpile] implicitly marks every static method inside
+        // the class — including private helpers. Without this, callers of
+        // private helpers (validateLevel, rotate, …) would still hit the
+        // boundary-violation guard at emit time even after class-level seeding.
+        var containing = method.ContainingType;
+        if (containing is not null)
+        {
+            foreach (var attr in containing.GetAttributes())
+            {
+                if (attr.AttributeClass?.ToDisplayString() == "Mirrorgen.TranspileAttribute" &&
+                    method.IsStatic) return true;
+            }
         }
         return false;
     }

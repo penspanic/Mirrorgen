@@ -99,4 +99,29 @@ public class MathInvocationTests
             returnType: "int",
             paramList: ""));
     }
+
+    [Fact]
+    public void Math_PI_Preserved_As_Named_Constant()
+    {
+        // Without the special case, the generic const-field inliner would
+        // replace Math.PI with its literal value (3.141592653589793),
+        // which is correct but unreadable on the TS side.
+        var ts = Transpile("return Math.PI;", returnType: "double", paramList: "");
+        Assert.Contains("return Math.PI;", ts);
+        Assert.DoesNotContain("3.14159", ts);
+    }
+
+    [Fact]
+    public void Math_E_Preserved_As_Named_Constant()
+    {
+        var ts = Transpile("return Math.E;", returnType: "double", paramList: "");
+        Assert.Contains("return Math.E;", ts);
+    }
+
+    [Fact]
+    public void MathF_PI_Also_Maps_To_Math_PI()
+    {
+        var ts = Transpile("return MathF.PI;", returnType: "float", paramList: "");
+        Assert.Contains("return Math.PI;", ts);
+    }
 }
