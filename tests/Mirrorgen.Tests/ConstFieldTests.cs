@@ -92,8 +92,13 @@ public class ConstFieldTests
     }
 
     [Fact]
-    public void Non_Public_Const_Is_Ignored()
+    public void Non_Public_Const_Is_Emitted_Module_Local()
     {
+        // Non-public consts surface as module-local `const` declarations so
+        // transpiled method bodies that reference them by name (`if (level
+        // > MaxLevel)` etc.) resolve. They stay unexported so external
+        // consumers can't reach them — that preserves the C# private /
+        // internal visibility intent at the module boundary.
         var ts = TranspilerEngine.TranspileSource("""
             [Mirrorgen.Attributes.Transpile]
             public static class K {
@@ -103,8 +108,10 @@ public class ConstFieldTests
             }
             """);
         Assert.Contains("export const Public: number = 1;", ts);
-        Assert.DoesNotContain("Internal", ts);
-        Assert.DoesNotContain("Private", ts);
+        Assert.Contains("const Internal: number = 2;", ts);
+        Assert.Contains("const Private: number = 3;", ts);
+        Assert.DoesNotContain("export const Internal", ts);
+        Assert.DoesNotContain("export const Private", ts);
     }
 
     [Fact]

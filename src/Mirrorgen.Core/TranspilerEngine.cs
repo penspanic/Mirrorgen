@@ -783,8 +783,13 @@ public static class TranspilerEngine
                         var isPublic = field.Modifiers.Any(m => m.IsKind(SyntaxKind.PublicKeyword));
                         var isConst = field.Modifiers.Any(m => m.IsKind(SyntaxKind.ConstKeyword));
                         var isStatic = field.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword));
-                        // Non-public members never cross the C# ↔ TS boundary regardless of kind.
-                        if (!isPublic) break;
+                        // Non-public const fields still need to surface as module-local
+                        // `const` declarations: transpiled method bodies reference them
+                        // by name (e.g. `low >> FaceShift`), so dropping them produces
+                        // undefined-identifier errors at the TS layer. Skip non-const
+                        // non-public members though — those don't appear in bodies and
+                        // would only pollute the interface shape.
+                        if (!isPublic && !isConst) break;
                         var fieldEmitName = ReadEmitName(field.AttributeLists);
                         foreach (var variable in field.Declaration.Variables)
                         {
@@ -795,7 +800,8 @@ public static class TranspilerEngine
                                 && TryFormatTsLiteral(constValue, out var literal))
                             {
                                 var tsType = MapType(field.Declaration.Type, ctx);
-                                consts.Append("export const ").Append(member)
+                                var keyword = isPublic ? "export const " : "const ";
+                                consts.Append(keyword).Append(member)
                                     .Append(": ").Append(tsType)
                                     .Append(" = ").Append(literal).AppendLine(";");
                             }
@@ -2756,20 +2762,39 @@ public static class TranspilerEngine
         // requires the shift count to also be bigint. Mid-emit promotion is
         // the only safe rewrite — caller's intent (shifting a bigint by an
         // int amount) survives identically.
+        //
+        // Bitwise / arithmetic mixed (`a | b` where one side is bigint and
+        // the other is int) needs the same coercion. C# implicitly converts
+        // the smaller type up to ulong, TS strict mode refuses the mix —
+        // promote the number side to BigInt to match C# semantics.
         var kind = bin.OperatorToken.Kind();
         bool isShift = kind == SyntaxKind.LessThanLessThanToken ||
                        kind == SyntaxKind.GreaterThanGreaterThanToken;
-        if (isShift)
+        bool isBitwiseOrArithmetic = isShift ||
+            kind is SyntaxKind.BarToken or SyntaxKind.AmpersandToken or SyntaxKind.CaretToken
+                or SyntaxKind.PlusToken or SyntaxKind.MinusToken
+                or SyntaxKind.AsteriskToken or SyntaxKind.SlashToken or SyntaxKind.PercentToken;
+        if (isBitwiseOrArithmetic)
         {
             var lhsType = ctx.TypeOf(bin.Left)?.SpecialType ?? SpecialType.None;
             var rhsType = ctx.TypeOf(bin.Right)?.SpecialType ?? SpecialType.None;
             bool lhsIsBigInt = lhsType is SpecialType.System_Int64 or SpecialType.System_UInt64;
-            bool rhsIsNumber = rhsType is SpecialType.System_Int32 or SpecialType.System_Int16
-                or SpecialType.System_Byte or SpecialType.System_SByte
-                or SpecialType.System_UInt32 or SpecialType.System_UInt16;
-            if (lhsIsBigInt && rhsIsNumber)
+            bool rhsIsBigInt = rhsType is SpecialType.System_Int64 or SpecialType.System_UInt64;
+            bool IsNumberSpecial(SpecialType s) =>
+                s is SpecialType.System_Int32 or SpecialType.System_Int16
+                    or SpecialType.System_Byte or SpecialType.System_SByte
+                    or SpecialType.System_UInt32 or SpecialType.System_UInt16;
+            if (lhsIsBigInt && IsNumberSpecial(rhsType))
             {
                 right = $"BigInt({right})";
+            }
+            // Shifts read the LHS as the bigint side — never swap the
+            // operands. For non-shift bitwise/arithmetic, the operation is
+            // symmetric so a bigint on the right with a number on the left
+            // also needs promotion to keep TS happy.
+            else if (!isShift && rhsIsBigInt && IsNumberSpecial(lhsType))
+            {
+                left = $"BigInt({left})";
             }
         }
 

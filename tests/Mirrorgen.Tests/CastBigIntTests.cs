@@ -98,4 +98,18 @@ public class CastBigIntTests
         Assert.Contains("t << n", ts);
         Assert.DoesNotContain("BigInt(n)", ts);
     }
+
+    [Fact]
+    public void BigInt_Or_Int_Coerces_Number_Side()
+    {
+        // `((ulong)y << 32) | (uint)x` — bitwise OR mixes a bigint LHS with
+        // a JS number RHS. TS strict mode rejects the mix; the C# semantic
+        // would have implicitly promoted the int to ulong. Walker promotes
+        // the number side to BigInt so the OR stays in bigint land.
+        var ts = Transpile(
+            "return ((ulong)(uint)y << 32) | (uint)x;",
+            returnType: "ulong",
+            paramList: "int x, int y");
+        Assert.Contains("BigInt(((x) >>> 0))", ts);
+    }
 }
