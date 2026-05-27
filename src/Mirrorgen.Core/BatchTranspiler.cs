@@ -17,9 +17,15 @@ public static class BatchTranspiler
     /// one file referencing a record in another inlines the record.
     /// </summary>
     public static Result TranspileFiles(IEnumerable<string> sourceFiles, string sourceRoot, string outputDir)
-        => TranspileFiles(sourceFiles, sourceRoot, outputDir, TypeMappingRegistry.Empty);
+        => TranspileFiles(sourceFiles, sourceRoot, outputDir, TypeMappingRegistry.Empty, TranspileOptions.Default);
 
     public static Result TranspileFiles(IEnumerable<string> sourceFiles, string sourceRoot, string outputDir, TypeMappingRegistry registry)
+        => TranspileFiles(sourceFiles, sourceRoot, outputDir, registry, TranspileOptions.Default);
+
+    public static Result TranspileFiles(IEnumerable<string> sourceFiles, string sourceRoot, string outputDir, TranspileOptions options)
+        => TranspileFiles(sourceFiles, sourceRoot, outputDir, TypeMappingRegistry.Empty, options);
+
+    public static Result TranspileFiles(IEnumerable<string> sourceFiles, string sourceRoot, string outputDir, TypeMappingRegistry registry, TranspileOptions options)
     {
         var src = Path.GetFullPath(sourceRoot);
         var dst = Path.GetFullPath(outputDir);
@@ -44,7 +50,7 @@ public static class BatchTranspiler
         int skipped = 0;
         foreach (var (path, rel, tree) in fileList)
         {
-            var ts = TranspilerEngine.TranspileTree(tree, compilation, registry);
+            var ts = TranspilerEngine.TranspileTree(tree, compilation, registry, options);
             if (string.IsNullOrEmpty(ts))
             {
                 skipped++;
@@ -65,6 +71,9 @@ public static class BatchTranspiler
     }
 
     public static Result TranspileDirectory(string sourceDir, string outputDir)
+        => TranspileDirectory(sourceDir, outputDir, TranspileOptions.Default);
+
+    public static Result TranspileDirectory(string sourceDir, string outputDir, TranspileOptions options)
     {
         if (!Directory.Exists(sourceDir))
         {
@@ -82,6 +91,6 @@ public static class BatchTranspiler
             files.Add(csFile);
         }
 
-        return TranspileFiles(files, src, outputDir);
+        return TranspileFiles(files, src, outputDir, options);
     }
 }

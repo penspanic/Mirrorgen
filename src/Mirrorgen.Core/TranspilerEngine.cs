@@ -108,6 +108,36 @@ public static class TranspilerEngine
             }
             if (!hasOwnTranspileEntry)
             {
+                // Type-level [Transpile] on a record / struct / enum also marks
+                // the file as own-emit — every TsGen-compatible DTO landing in
+                // its own .ts. Inline reachability from sibling consumers keeps
+                // working independently.
+                foreach (var typeNode in tree.GetCompilationUnitRoot().DescendantNodes())
+                {
+                    if (typeNode is RecordDeclarationSyntax or StructDeclarationSyntax or EnumDeclarationSyntax &&
+                        HasTranspileAttribute(TypeAttributeLists(typeNode)))
+                    {
+                        hasOwnTranspileEntry = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasOwnTranspileEntry &&
+                options.ScanPathMarkers.Count > 0 &&
+                !string.IsNullOrEmpty(tree.FilePath) &&
+                options.ScanPathMarkers.Any(marker => tree.FilePath.Contains(marker, StringComparison.Ordinal)))
+            {
+                foreach (var typeNode in tree.GetCompilationUnitRoot().DescendantNodes().OfType<BaseTypeDeclarationSyntax>())
+                {
+                    if (typeNode.Modifiers.Any(t => t.IsKind(SyntaxKind.PublicKeyword)))
+                    {
+                        hasOwnTranspileEntry = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasOwnTranspileEntry)
+            {
                 return string.Empty;
             }
         }
@@ -118,17 +148,30 @@ public static class TranspilerEngine
         // / records reference them.
         var emit = new HashSet<SyntaxNode>();
         var queue = new Queue<SyntaxNode>();
+        var fileMatchesScanMarker = options.ScanPathMarkers.Count > 0 &&
+            !string.IsNullOrEmpty(tree.FilePath) &&
+            options.ScanPathMarkers.Any(marker => tree.FilePath.Contains(marker, StringComparison.Ordinal));
+
         foreach (var node in tree.GetCompilationUnitRoot().DescendantNodes())
         {
             var attrs = TypeAttributeLists(node);
-            if (attrs.Count > 0 && HasTranspileAttribute(attrs))
+            var hasAttr = attrs.Count > 0 && HasTranspileAttribute(attrs);
+            // Directory-marker scan: public types in path-matched files behave
+            // as if they had [Transpile] — but only for *type-only* emission
+            // (TsGen-equivalent "shape only" semantics; methods are NOT
+            // auto-seeded by marker mode alone).
+            var markerHit = fileMatchesScanMarker
+                && node is BaseTypeDeclarationSyntax markerCandidate
+                && markerCandidate.Modifiers.Any(t => t.IsKind(SyntaxKind.PublicKeyword));
+            if (hasAttr || markerHit)
             {
                 if (emit.Add(node)) queue.Enqueue(node);
                 // Class-level [Transpile] also seeds every public static method
                 // inside the class as an emit target — saves repeating the
                 // attribute on every helper. Per-method [Transpile] still works
-                // (idempotent: emit.Add is a HashSet).
-                if (node is ClassDeclarationSyntax cls)
+                // (idempotent: emit.Add is a HashSet). Marker mode skips this
+                // step (shape only).
+                if (hasAttr && node is ClassDeclarationSyntax cls)
                 {
                     foreach (var memberMethod in cls.Members.OfType<MethodDeclarationSyntax>())
                     {
