@@ -167,6 +167,44 @@ public static class TranspilerEngine
                 first = false;
             }
         }
+        return PrependHelpers(ctx, sb.ToString());
+    }
+
+    // Helper functions emitted lazily at the top of any .ts file that
+    // references them. Each key matches a name fed into ctx.UsedHelpers.
+    static readonly Dictionary<string, string> HelperDefinitions = new(StringComparer.Ordinal)
+    {
+        ["bankersRound"] = """
+            function __mirrorgen_bankersRound(x: number): number {
+              const floor = Math.floor(x);
+              const diff = x - floor;
+              let rounded: number;
+              if (diff > 0.5) rounded = floor + 1;
+              else if (diff < 0.5) rounded = floor;
+              // exactly 0.5 — round to even, matching C# Math.Round default
+              else rounded = floor % 2 === 0 ? floor : floor + 1;
+              // Mirror C# negative-zero behaviour: Math.Round(-0.5) returns -0,
+              // not +0. vitest's toStrictEqual uses Object.is, so the sign matters.
+              return rounded === 0 && x < 0 ? -0 : rounded;
+            }
+            """,
+        ["awayFromZeroRound"] = """
+            function __mirrorgen_awayFromZeroRound(x: number): number {
+              return x >= 0 ? Math.floor(x + 0.5) : -Math.floor(-x + 0.5);
+            }
+            """,
+    };
+
+    static string PrependHelpers(EmitContext ctx, string body)
+    {
+        if (ctx.UsedHelpers.Count == 0) return body;
+        var sb = new StringBuilder();
+        foreach (var name in ctx.UsedHelpers.OrderBy(n => n, StringComparer.Ordinal))
+        {
+            sb.AppendLine(HelperDefinitions[name]);
+            sb.AppendLine();
+        }
+        sb.Append(body);
         return sb.ToString();
     }
 
@@ -243,6 +281,7 @@ public static class TranspilerEngine
     {
         readonly SemanticModel _model;
         public TypeMappingRegistry Registry { get; }
+        public HashSet<string> UsedHelpers { get; } = new(StringComparer.Ordinal);
 
         public EmitContext(SemanticModel model, TypeMappingRegistry registry)
         {
@@ -1203,6 +1242,11 @@ public static class TranspilerEngine
             return raw;
         }
 
+        if (TryMapMathDivergenceInvocation(inv, target, ctx, out var divEmit))
+        {
+            return divEmit;
+        }
+
         if (TryMapDictionaryInvocation(inv, target, ctx, out var dictEmit))
         {
             return dictEmit;
@@ -1220,6 +1264,61 @@ public static class TranspilerEngine
         }
 
         return $"{target.Name}({args})";
+    }
+
+    static bool TryMapMathDivergenceInvocation(InvocationExpressionSyntax inv, IMethodSymbol target, EmitContext ctx, out string emit)
+    {
+        emit = string.Empty;
+        if (target.ContainingType is null) return false;
+        var containing = target.ContainingType.ToDisplayString();
+        if (containing != "System.Math" && containing != "System.MathF") return false;
+
+        var argsList = inv.ArgumentList.Arguments;
+
+        // Math.Truncate -> Math.trunc — identical semantics, just a name swap.
+        if (target.Name == "Truncate" && argsList.Count == 1)
+        {
+            emit = $"Math.trunc({EmitExpression(argsList[0].Expression, ctx)})";
+            return true;
+        }
+
+        if (target.Name == "Round")
+        {
+            // Math.Round(x) — default banker's rounding (ToEven).
+            if (argsList.Count == 1)
+            {
+                ctx.UsedHelpers.Add("bankersRound");
+                emit = $"__mirrorgen_bankersRound({EmitExpression(argsList[0].Expression, ctx)})";
+                return true;
+            }
+            // Math.Round(x, MidpointRounding.AwayFromZero) or .ToEven.
+            if (argsList.Count == 2 &&
+                argsList[1].Expression is MemberAccessExpressionSyntax mode)
+            {
+                var modeName = mode.Name.Identifier.Text;
+                if (modeName == "AwayFromZero")
+                {
+                    ctx.UsedHelpers.Add("awayFromZeroRound");
+                    emit = $"__mirrorgen_awayFromZeroRound({EmitExpression(argsList[0].Expression, ctx)})";
+                    return true;
+                }
+                if (modeName == "ToEven")
+                {
+                    ctx.UsedHelpers.Add("bankersRound");
+                    emit = $"__mirrorgen_bankersRound({EmitExpression(argsList[0].Expression, ctx)})";
+                    return true;
+                }
+                throw new NotSupportedException(
+                    $"Unsupported MidpointRounding mode '{modeName}'. v0.2 supports ToEven and AwayFromZero.");
+            }
+            // The (double, int digits) overload would need a different
+            // approximation; leave it for later rather than emit something
+            // that almost works.
+            throw new NotSupportedException(
+                $"Math.Round overload with {argsList.Count} arg(s) is not supported in v0.2. Use the 1-arg form or pass MidpointRounding.AwayFromZero / ToEven.");
+        }
+
+        return false;
     }
 
     static bool TryMapListInvocation(InvocationExpressionSyntax inv, IMethodSymbol target, EmitContext ctx, out string emit)

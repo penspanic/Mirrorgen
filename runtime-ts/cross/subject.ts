@@ -1,3 +1,20 @@
+function __mirrorgen_awayFromZeroRound(x: number): number {
+  return x >= 0 ? Math.floor(x + 0.5) : -Math.floor(-x + 0.5);
+}
+
+function __mirrorgen_bankersRound(x: number): number {
+  const floor = Math.floor(x);
+  const diff = x - floor;
+  let rounded: number;
+  if (diff > 0.5) rounded = floor + 1;
+  else if (diff < 0.5) rounded = floor;
+  // exactly 0.5 — round to even, matching C# Math.Round default
+  else rounded = floor % 2 === 0 ? floor : floor + 1;
+  // Mirror C# negative-zero behaviour: Math.Round(-0.5) returns -0,
+  // not +0. vitest's toStrictEqual uses Object.is, so the sign matters.
+  return rounded === 0 && x < 0 ? -0 : rounded;
+}
+
 export function FortyTwo(): number {
   return 42;
 }
@@ -158,6 +175,18 @@ export function WrapAddLong(a: bigint, b: bigint): bigint {
 
 export function WrapMulLong(a: bigint, b: bigint): bigint {
   return BigInt.asIntN(64, a * b);
+}
+
+export function RoundEven(x: number): number {
+  return __mirrorgen_bankersRound(x);
+}
+
+export function RoundAway(x: number): number {
+  return __mirrorgen_awayFromZeroRound(x);
+}
+
+export function TruncDouble(x: number): number {
+  return Math.trunc(x);
 }
 
 export function FirstNonNegativeStep(n: number): number {

@@ -192,6 +192,34 @@ public static class Subject
     [CrossTestCase(long.MinValue, -1L)]
     public static long WrapMulLong(long a, long b) => a * b;
 
+    // Math.Round (default banker's) — corner cases at the half-way points
+    // where C# rounds to even but JS Math.round rounds half-away-from-zero.
+    [Transpile]
+    [GenerateCrossTest(Samples = 8, Seed = 35)]
+    [CrossTestCase(0.5)]
+    [CrossTestCase(1.5)]
+    [CrossTestCase(2.5)]
+    [CrossTestCase(-0.5)]
+    [CrossTestCase(-1.5)]
+    [CrossTestCase(-2.5)]
+    public static double RoundEven(double x) => System.Math.Round(x);
+
+    // Math.Round with MidpointRounding.AwayFromZero — diverges from JS too,
+    // since JS Math.round rounds -0.5 toward +Inf (== 0), not -1.
+    [Transpile]
+    [GenerateCrossTest(Samples = 8, Seed = 36)]
+    [CrossTestCase(0.5)]
+    [CrossTestCase(-0.5)]
+    [CrossTestCase(2.5)]
+    [CrossTestCase(-2.5)]
+    public static double RoundAway(double x) =>
+        System.Math.Round(x, System.MidpointRounding.AwayFromZero);
+
+    // Math.Truncate — semantically same as Math.trunc; sanity check the
+    // whitelist mapping.
+    [Transpile, GenerateCrossTest(Samples = 8, Seed = 37)]
+    public static double TruncDouble(double x) => System.Math.Truncate(x);
+
     // do-while with break.
     [Transpile, GenerateCrossTest(Samples = 10, Seed = 29)]
     public static int FirstNonNegativeStep(int n)
