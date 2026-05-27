@@ -35,6 +35,8 @@ dist/
 _generated/
 !samples/minimal/client/src/_generated/
 !samples/minimal/client/src/_generated/**
+!samples/pricing-rules/client/src/_generated/
+!samples/pricing-rules/client/src/_generated/**
 
 # OS
 .DS_Store
