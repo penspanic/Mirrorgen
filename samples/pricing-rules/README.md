@@ -16,6 +16,9 @@ shape of a real consumer is visible. Covers:
   channel.
 - **While loop** — `HalvingRounds` cross-validates an integer-division
   decay loop under random clamped input.
+- **Array argument** — `CartSubtotalCents(OrderLine[])` sums an array of
+  records sampled at random length 0..8. Exercises array fixture
+  sampling end to end.
 
 ## Layout
 
@@ -50,7 +53,4 @@ C# original on the random inputs.
 
 ## What it doesn't show (yet)
 
-- `List<T>` / array arguments — `[GenerateCrossTest]` doesn't sample
-  collections, so a method that takes an `OrderLine[]` would emit fine
-  but skip cross-validation.
 - Custom generic types — explicitly out of v0.1 scope.

@@ -940,7 +940,7 @@ public static class TranspilerEngine
             case ConditionalExpressionSyntax cond:
                 return $"{EmitExpression(cond.Condition, ctx)} ? {EmitExpression(cond.WhenTrue, ctx)} : {EmitExpression(cond.WhenFalse, ctx)}";
             case AssignmentExpressionSyntax assign:
-                return $"{EmitExpression(assign.Left, ctx)} {MapAssignmentOperator(assign.OperatorToken)} {EmitExpression(assign.Right, ctx)}";
+                return EmitAssignment(assign, ctx);
             case InvocationExpressionSyntax inv:
                 return EmitInvocation(inv, ctx);
             case MemberAccessExpressionSyntax member when member.IsKind(SyntaxKind.SimpleMemberAccessExpression):
@@ -1045,6 +1045,30 @@ public static class TranspilerEngine
             SyntaxKind.PercentEqualsToken => "%=",
             _ => throw new NotSupportedException($"Unsupported assignment operator: {op.Kind()}"),
         };
+    }
+
+    static string EmitAssignment(AssignmentExpressionSyntax assign, EmitContext ctx)
+    {
+        var op = assign.OperatorToken.Kind();
+        // For int32 compound assignment, expand to `a = ((a op b) | 0)` (or
+        // Math.imul for *) so the result wraps the same way C# unchecked
+        // arithmetic does. Plain `=` and non-int targets pass through.
+        if (op != SyntaxKind.EqualsToken && ctx.IsInt32(assign.Left))
+        {
+            var left = EmitExpression(assign.Left, ctx);
+            var right = EmitExpression(assign.Right, ctx);
+            string combined = op switch
+            {
+                SyntaxKind.PlusEqualsToken => $"(({left} + {right}) | 0)",
+                SyntaxKind.MinusEqualsToken => $"(({left} - {right}) | 0)",
+                SyntaxKind.AsteriskEqualsToken => $"Math.imul({left}, {right})",
+                SyntaxKind.SlashEqualsToken => $"(({left} / {right}) | 0)",
+                SyntaxKind.PercentEqualsToken => $"(({left} % {right}) | 0)",
+                _ => throw new NotSupportedException($"Unsupported compound assignment: {op}"),
+            };
+            return $"{left} = {combined}";
+        }
+        return $"{EmitExpression(assign.Left, ctx)} {MapAssignmentOperator(assign.OperatorToken)} {EmitExpression(assign.Right, ctx)}";
     }
 
     static string EmitBinary(BinaryExpressionSyntax bin, EmitContext ctx)

@@ -43,6 +43,14 @@ export function ZoneForDistance(distanceKm: number): ShippingZone {
   return ((): ShippingZone => { const _v = distanceKm; if ((_v >= 0 && _v < 50)) return ShippingZone.Local; if ((_v >= 50 && _v < 1000)) return ShippingZone.Regional; return ShippingZone.International; throw new Error("switch expression: no arm matched"); })();
 }
 
+export function CartSubtotalCents(lines: OrderLine[]): number {
+  let total: number = 0;
+  for (const l of lines) {
+    total = ((total + LineSubtotalCents(l)) | 0);
+  }
+  return total;
+}
+
 export interface Money {
   Cents: number;
 }

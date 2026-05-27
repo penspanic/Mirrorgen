@@ -23,7 +23,7 @@ public class WhileLoopTests
             }
             """);
         Assert.Contains("while (i < n) {", ts);
-        Assert.Contains("    total += i;", ts);
+        Assert.Contains("    total = ((total + i) | 0);", ts);
         Assert.Contains("    i++;", ts);
     }
 

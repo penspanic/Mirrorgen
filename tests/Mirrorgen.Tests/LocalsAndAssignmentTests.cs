@@ -82,18 +82,20 @@ public class LocalsAndAssignmentTests
     }
 
     [Fact]
-    public void Compound_Assignment_Plus_Equals()
+    public void Compound_Assignment_Plus_Equals_Wraps_For_Int()
     {
         var ts = Transpile("""
             int x = 0;
             x += 3;
             return x;
             """);
-        Assert.Contains("x += 3;", ts);
+        // Int compound assignment expands to `x = ((x + 3) | 0)` so the
+        // wrap matches C# unchecked behaviour even on overflow.
+        Assert.Contains("x = ((x + 3) | 0);", ts);
     }
 
     [Fact]
-    public void Compound_Assignment_All_Forms()
+    public void Compound_Assignment_All_Forms_Wrap_For_Int()
     {
         var ts = Transpile("""
             int x = 10;
@@ -103,9 +105,9 @@ public class LocalsAndAssignmentTests
             x %= 4;
             return x;
             """);
-        Assert.Contains("x -= 1;", ts);
-        Assert.Contains("x *= 2;", ts);
-        Assert.Contains("x /= 3;", ts);
-        Assert.Contains("x %= 4;", ts);
+        Assert.Contains("x = ((x - 1) | 0);", ts);
+        Assert.Contains("x = Math.imul(x, 2);", ts);
+        Assert.Contains("x = ((x / 3) | 0);", ts);
+        Assert.Contains("x = ((x % 4) | 0);", ts);
     }
 }

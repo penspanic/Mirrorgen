@@ -26,7 +26,7 @@ public class LoopTests
             return sum;
             """);
         Assert.Contains("for (let i: number = 0; i < n; i++) {", ts);
-        Assert.Contains("    sum += i;", ts);
+        Assert.Contains("    sum = ((sum + i) | 0);", ts);
     }
 
     [Fact]
@@ -48,7 +48,7 @@ public class LoopTests
             for (int i = 0; i < n; i += 2) sum += i;
             return sum;
             """);
-        Assert.Contains("for (let i: number = 0; i < n; i += 2) {", ts);
+        Assert.Contains("for (let i: number = 0; i < n; i = ((i + 2) | 0)) {", ts);
     }
 
     [Fact]

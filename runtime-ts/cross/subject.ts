@@ -55,7 +55,7 @@ export function SumTo(n: number): number {
   let top: number = n > 100 ? 100 : (n < 0 ? 0 : n);
   let sum: number = 0;
   for (let i: number = 0; i < top; i++) {
-    sum += i;
+    sum = ((sum + i) | 0);
   }
   return sum;
 }
@@ -85,7 +85,7 @@ export function Clamp(v: number, lo: number, hi: number): number {
 export function CategoryByMod(x: number): number {
   let m: number = ((x % 3) | 0);
   if (m < 0) {
-    m += 3;
+    m = ((m + 3) | 0);
   }
   return ((): number => { const _v = m; if (_v === 0) return 100; if (_v === 1) return 200; return 300; throw new Error("switch expression: no arm matched"); })();
 }
@@ -93,7 +93,7 @@ export function CategoryByMod(x: number): number {
 export function LabelMod4(x: number): string {
   let m: number = ((x % 4) | 0);
   if (m < 0) {
-    m += 4;
+    m = ((m + 4) | 0);
   }
   switch (m) {
     case 0:

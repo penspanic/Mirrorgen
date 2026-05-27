@@ -901,5 +901,416 @@
         "expected": 2
       }
     ]
+  },
+  {
+    "name": "CartSubtotalCents",
+    "calls": [
+      {
+        "args": [
+          [
+            {
+              "Product": -1087777906,
+              "Quantity": 1309960073,
+              "UnitPrice": {
+                "Cents": 2018308030
+              }
+            }
+          ]
+        ],
+        "expected": 1950060146
+      },
+      {
+        "args": [
+          [
+            {
+              "Product": 727896878,
+              "Quantity": 1844266047,
+              "UnitPrice": {
+                "Cents": 1884145090
+              }
+            },
+            {
+              "Product": 1243635162,
+              "Quantity": 560814772,
+              "UnitPrice": {
+                "Cents": 1290171398
+              }
+            },
+            {
+              "Product": 358470933,
+              "Quantity": 524937975,
+              "UnitPrice": {
+                "Cents": 611085882
+              }
+            },
+            {
+              "Product": 1693580224,
+              "Quantity": -811360131,
+              "UnitPrice": {
+                "Cents": 125242686
+              }
+            },
+            {
+              "Product": 1560276236,
+              "Quantity": -760185201,
+              "UnitPrice": {
+                "Cents": 1056818275
+              }
+            }
+          ]
+        ],
+        "expected": 2045747150
+      },
+      {
+        "args": [
+          [
+            {
+              "Product": 601698404,
+              "Quantity": 1548221835,
+              "UnitPrice": {
+                "Cents": 1063355652
+              }
+            },
+            {
+              "Product": -1941064749,
+              "Quantity": 320244424,
+              "UnitPrice": {
+                "Cents": -1064307532
+              }
+            },
+            {
+              "Product": 846915756,
+              "Quantity": 1053286074,
+              "UnitPrice": {
+                "Cents": -1726065933
+              }
+            },
+            {
+              "Product": 1066752827,
+              "Quantity": -2096897043,
+              "UnitPrice": {
+                "Cents": 1483633048
+              }
+            },
+            {
+              "Product": -599164371,
+              "Quantity": -2056300052,
+              "UnitPrice": {
+                "Cents": -389129002
+              }
+            },
+            {
+              "Product": -291291915,
+              "Quantity": 597586466,
+              "UnitPrice": {
+                "Cents": 688472993
+              }
+            },
+            {
+              "Product": 957732744,
+              "Quantity": 1609065969,
+              "UnitPrice": {
+                "Cents": 817504782
+              }
+            }
+          ]
+        ],
+        "expected": -1775665866
+      },
+      {
+        "args": [
+          [
+            {
+              "Product": -1948915053,
+              "Quantity": 220118938,
+              "UnitPrice": {
+                "Cents": -1699992298
+              }
+            },
+            {
+              "Product": 1882170790,
+              "Quantity": 389503321,
+              "UnitPrice": {
+                "Cents": -1411837764
+              }
+            },
+            {
+              "Product": 276970598,
+              "Quantity": -1019351645,
+              "UnitPrice": {
+                "Cents": -976377559
+              }
+            },
+            {
+              "Product": 1816694222,
+              "Quantity": -1816842660,
+              "UnitPrice": {
+                "Cents": 1093289042
+              }
+            },
+            {
+              "Product": -595818246,
+              "Quantity": -1662252831,
+              "UnitPrice": {
+                "Cents": 794887091
+              }
+            }
+          ]
+        ],
+        "expected": 838090366
+      },
+      {
+        "args": [
+          [
+            {
+              "Product": -2028853057,
+              "Quantity": 1098875652,
+              "UnitPrice": {
+                "Cents": -781817596
+              }
+            },
+            {
+              "Product": -808651168,
+              "Quantity": -1764864011,
+              "UnitPrice": {
+                "Cents": -1616766148
+              }
+            },
+            {
+              "Product": -2128436688,
+              "Quantity": 547655907,
+              "UnitPrice": {
+                "Cents": 2128171106
+              }
+            },
+            {
+              "Product": 1721896211,
+              "Quantity": 48001484,
+              "UnitPrice": {
+                "Cents": 19590791
+              }
+            },
+            {
+              "Product": 741809616,
+              "Quantity": 909091834,
+              "UnitPrice": {
+                "Cents": -5524296
+              }
+            }
+          ]
+        ],
+        "expected": 1849919459
+      },
+      {
+        "args": [
+          [
+            {
+              "Product": -386715825,
+              "Quantity": -884816959,
+              "UnitPrice": {
+                "Cents": 1706058241
+              }
+            },
+            {
+              "Product": 2023111434,
+              "Quantity": 977720843,
+              "UnitPrice": {
+                "Cents": -1557195100
+              }
+            },
+            {
+              "Product": -1277997385,
+              "Quantity": -1305316845,
+              "UnitPrice": {
+                "Cents": -125278401
+              }
+            },
+            {
+              "Product": 1282965606,
+              "Quantity": 864215099,
+              "UnitPrice": {
+                "Cents": 468569191
+              }
+            }
+          ]
+        ],
+        "expected": -910557203
+      },
+      {
+        "args": [
+          [
+            {
+              "Product": 125276217,
+              "Quantity": -940392030,
+              "UnitPrice": {
+                "Cents": -1617437244
+              }
+            },
+            {
+              "Product": 350783459,
+              "Quantity": 1722350913,
+              "UnitPrice": {
+                "Cents": 613542873
+              }
+            },
+            {
+              "Product": 1950247644,
+              "Quantity": -1233407451,
+              "UnitPrice": {
+                "Cents": -1848330702
+              }
+            }
+          ]
+        ],
+        "expected": -1250993201
+      },
+      {
+        "args": [
+          [
+            {
+              "Product": 638290033,
+              "Quantity": 889077055,
+              "UnitPrice": {
+                "Cents": -1583976423
+              }
+            }
+          ]
+        ],
+        "expected": -1844481649
+      },
+      {
+        "args": [
+          [
+            {
+              "Product": -781829999,
+              "Quantity": 1458139257,
+              "UnitPrice": {
+                "Cents": -1313724945
+              }
+            },
+            {
+              "Product": -1827569953,
+              "Quantity": 1580782023,
+              "UnitPrice": {
+                "Cents": -1082719409
+              }
+            },
+            {
+              "Product": -1507767251,
+              "Quantity": -1206411640,
+              "UnitPrice": {
+                "Cents": -1703130118
+              }
+            }
+          ]
+        ],
+        "expected": -1751125774
+      },
+      {
+        "args": [
+          [
+            {
+              "Product": 2016199921,
+              "Quantity": -1206564672,
+              "UnitPrice": {
+                "Cents": 1576505696
+              }
+            },
+            {
+              "Product": -476299161,
+              "Quantity": -566440621,
+              "UnitPrice": {
+                "Cents": -1383682811
+              }
+            }
+          ]
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          [
+            {
+              "Product": -291659194,
+              "Quantity": 1344312482,
+              "UnitPrice": {
+                "Cents": 1461987417
+              }
+            },
+            {
+              "Product": 2063809026,
+              "Quantity": 1563533424,
+              "UnitPrice": {
+                "Cents": 1555782935
+              }
+            },
+            {
+              "Product": -1169823914,
+              "Quantity": -1383891768,
+              "UnitPrice": {
+                "Cents": -1579362045
+              }
+            },
+            {
+              "Product": 1333430586,
+              "Quantity": 892202451,
+              "UnitPrice": {
+                "Cents": -461299037
+              }
+            },
+            {
+              "Product": -820484178,
+              "Quantity": -1199475091,
+              "UnitPrice": {
+                "Cents": -963553004
+              }
+            },
+            {
+              "Product": 865814650,
+              "Quantity": -1892197497,
+              "UnitPrice": {
+                "Cents": 2112788112
+              }
+            }
+          ]
+        ],
+        "expected": -1590697435
+      },
+      {
+        "args": [
+          [
+            {
+              "Product": 1725670511,
+              "Quantity": -196138693,
+              "UnitPrice": {
+                "Cents": 1045391266
+              }
+            },
+            {
+              "Product": 1169659908,
+              "Quantity": 746830437,
+              "UnitPrice": {
+                "Cents": -1719484654
+              }
+            },
+            {
+              "Product": 1875196352,
+              "Quantity": -114301696,
+              "UnitPrice": {
+                "Cents": -1799575442
+              }
+            },
+            {
+              "Product": 471464267,
+              "Quantity": 1769047155,
+              "UnitPrice": {
+                "Cents": -1580353859
+              }
+            }
+          ]
+        ],
+        "expected": 1996208841
+      }
+    ]
   }
 ]

@@ -110,4 +110,18 @@ public static class Pricing
             _ => ShippingZone.International,
         };
     }
+
+    // List-valued argument — exercises array sampling end to end. Each
+    // random fixture builds an OrderLine[] of 0..8 entries, both sides
+    // walk it and sum, vitest asserts byte equivalence.
+    [Transpile, GenerateCrossTest(Samples = 12, Seed = 108)]
+    public static int CartSubtotalCents(OrderLine[] lines)
+    {
+        int total = 0;
+        foreach (var l in lines)
+        {
+            total += LineSubtotalCents(l);
+        }
+        return total;
+    }
 }

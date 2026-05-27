@@ -202,6 +202,36 @@ public static class FixtureGenerator
         if (t == typeof(double)) return rng.NextDouble() * 200.0 - 100.0;
         if (t == typeof(string)) return GenerateString(rng);
 
+        // T[] / List<T> / IReadOnlyList<T> / IList<T> — length 0..8, each
+        // element recursively sampled. JSON serialisation handles the array
+        // shape, which is what the TS side reads as a `T[]`.
+        if (t.IsArray && t.GetElementType() is { } arrayElem)
+        {
+            int length = rng.Next(0, 9);
+            var arr = Array.CreateInstance(arrayElem, length);
+            for (int i = 0; i < length; i++)
+            {
+                arr.SetValue(GenerateArg(arrayElem, paramName, methodName, rng, registry), i);
+            }
+            return arr;
+        }
+        if (t.IsGenericType)
+        {
+            var def = t.GetGenericTypeDefinition();
+            if (def == typeof(List<>) || def == typeof(IReadOnlyList<>) || def == typeof(IList<>))
+            {
+                var elem = t.GetGenericArguments()[0];
+                var listType = typeof(List<>).MakeGenericType(elem);
+                var list = (System.Collections.IList)Activator.CreateInstance(listType)!;
+                int length = rng.Next(0, 9);
+                for (int i = 0; i < length; i++)
+                {
+                    list.Add(GenerateArg(elem, paramName, methodName, rng, registry));
+                }
+                return list;
+            }
+        }
+
         if (t.IsEnum && HasAttribute(t, TranspileAttributeName))
         {
             var values = Enum.GetValues(t);
