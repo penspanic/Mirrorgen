@@ -526,7 +526,8 @@ public static class TranspilerEngine
                 }
                 var member = p.Identifier.Text;
                 if (!seen.Add(member)) continue;
-                interfaceBody.Append(BodyIndent).Append(member).Append(": ").Append(MapType(p.Type, ctx)).AppendLine(";");
+                var opt = p.Type is NullableTypeSyntax ? "?" : "";
+                interfaceBody.Append(BodyIndent).Append(member).Append(opt).Append(": ").Append(MapType(p.Type, ctx)).AppendLine(";");
                 hasInterfaceMember = true;
             }
         }
@@ -540,7 +541,8 @@ public static class TranspilerEngine
                     {
                         var member = prop.Identifier.Text;
                         if (!seen.Add(member)) continue;
-                        interfaceBody.Append(BodyIndent).Append(member).Append(": ").Append(MapType(prop.Type, ctx)).AppendLine(";");
+                        var opt = prop.Type is NullableTypeSyntax ? "?" : "";
+                        interfaceBody.Append(BodyIndent).Append(member).Append(opt).Append(": ").Append(MapType(prop.Type, ctx)).AppendLine(";");
                         hasInterfaceMember = true;
                         break;
                     }
@@ -571,7 +573,8 @@ public static class TranspilerEngine
                             }
                             else
                             {
-                                interfaceBody.Append(BodyIndent).Append(member).Append(": ").Append(MapType(field.Declaration.Type, ctx)).AppendLine(";");
+                                var opt = field.Declaration.Type is NullableTypeSyntax ? "?" : "";
+                                interfaceBody.Append(BodyIndent).Append(member).Append(opt).Append(": ").Append(MapType(field.Declaration.Type, ctx)).AppendLine(";");
                                 hasInterfaceMember = true;
                             }
                         }
@@ -664,17 +667,30 @@ public static class TranspilerEngine
     {
         if (type is ArrayTypeSyntax arr)
         {
+            // System.Text.Json serializes byte[] as a base64 string at the wire,
+            // not as number[]. Match that contract.
+            if (arr.ElementType is PredefinedTypeSyntax { Keyword.ValueText: "byte" })
+                return "string";
             return $"{MapType(arr.ElementType, ctx)}[]";
         }
         if (type is NullableTypeSyntax nt)
         {
             return $"{MapType(nt.ElementType, ctx)} | null";
         }
+        // `System.Collections.Generic.List<int>` and other qualified references
+        // resolve by recursing on the final segment — namespace qualifiers are
+        // stripped (TS treats type names by their tail identifier).
+        if (type is QualifiedNameSyntax qn)
+        {
+            return MapType(qn.Right, ctx);
+        }
         if (type is GenericNameSyntax gen)
         {
             var genericName = gen.Identifier.Text;
             var args = gen.TypeArgumentList.Arguments;
-            if (genericName is "List" or "IReadOnlyList" or "IList" && args.Count == 1)
+            if (genericName is "List" or "IReadOnlyList" or "IList"
+                or "IEnumerable" or "ICollection" or "IReadOnlyCollection"
+                && args.Count == 1)
             {
                 return $"{MapType(args[0], ctx)}[]";
             }
