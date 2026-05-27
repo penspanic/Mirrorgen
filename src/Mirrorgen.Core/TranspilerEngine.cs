@@ -74,16 +74,30 @@ public static class TranspilerEngine
         // inline into.
         if (compilation.SyntaxTrees.Length > 1)
         {
-            bool hasOwnTranspileMethod = false;
+            bool hasOwnTranspileEntry = false;
             foreach (var m in methods)
             {
                 if (HasTranspileAttribute(m.AttributeLists))
                 {
-                    hasOwnTranspileMethod = true;
+                    hasOwnTranspileEntry = true;
                     break;
                 }
             }
-            if (!hasOwnTranspileMethod)
+            if (!hasOwnTranspileEntry)
+            {
+                // Class-level [Transpile] on a class that holds at least one
+                // public static member also makes this file an own-emit unit.
+                foreach (var classNode in tree.GetCompilationUnitRoot().DescendantNodes().OfType<ClassDeclarationSyntax>())
+                {
+                    if (!HasTranspileAttribute(classNode.AttributeLists)) continue;
+                    if (HasAnyPublicStaticMember(classNode))
+                    {
+                        hasOwnTranspileEntry = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasOwnTranspileEntry)
             {
                 return string.Empty;
             }
@@ -101,6 +115,18 @@ public static class TranspilerEngine
             if (attrs.Count > 0 && HasTranspileAttribute(attrs))
             {
                 if (emit.Add(node)) queue.Enqueue(node);
+                // Class-level [Transpile] also seeds every public static method
+                // inside the class as an emit target — saves repeating the
+                // attribute on every helper. Per-method [Transpile] still works
+                // (idempotent: emit.Add is a HashSet).
+                if (node is ClassDeclarationSyntax cls)
+                {
+                    foreach (var memberMethod in cls.Members.OfType<MethodDeclarationSyntax>())
+                    {
+                        if (IsPublicStaticMethod(memberMethod) && emit.Add(memberMethod))
+                            queue.Enqueue(memberMethod);
+                    }
+                }
             }
         }
         foreach (var m in methods)
@@ -214,6 +240,28 @@ public static class TranspilerEngine
         BaseTypeDeclarationSyntax bt => bt.AttributeLists,
         _ => default,
     };
+
+    static bool IsPublicStaticMethod(MethodDeclarationSyntax m) =>
+        m.Modifiers.Any(t => t.IsKind(SyntaxKind.PublicKeyword)) &&
+        m.Modifiers.Any(t => t.IsKind(SyntaxKind.StaticKeyword));
+
+    static bool HasAnyPublicStaticMember(ClassDeclarationSyntax cls)
+    {
+        foreach (var member in cls.Members)
+        {
+            switch (member)
+            {
+                case MethodDeclarationSyntax m when IsPublicStaticMethod(m):
+                    return true;
+                case FieldDeclarationSyntax f when
+                    f.Modifiers.Any(t => t.IsKind(SyntaxKind.PublicKeyword)) &&
+                    (f.Modifiers.Any(t => t.IsKind(SyntaxKind.ConstKeyword)) ||
+                     f.Modifiers.Any(t => t.IsKind(SyntaxKind.StaticKeyword))):
+                    return true;
+            }
+        }
+        return false;
+    }
 
     static IEnumerable<string> ExtractReferencedTypeNames(SyntaxNode node)
     {
