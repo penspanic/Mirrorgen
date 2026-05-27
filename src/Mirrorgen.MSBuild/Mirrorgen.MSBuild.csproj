@@ -14,6 +14,13 @@
           behaviour for SDK-style task projects strips transitive lib output.
         -->
         <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+        <!--
+          The task .dll is packed into tasks/ rather than lib/, so the default
+          snupkg layout ends up empty and nuget.org rejects it. Skip symbol
+          packaging here — embed the PDB inside the .nupkg instead.
+        -->
+        <IncludeSymbols>false</IncludeSymbols>
+        <DebugType>embedded</DebugType>
         <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_AddMSBuildAssetsToPackage</TargetsForTfmSpecificContentInPackage>
     </PropertyGroup>
 
