@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Mirrorgen;
 
 namespace Mirrorgen.CrossFixtures;
@@ -151,6 +152,18 @@ public static class Subject
     public static int WrapMul(int a, int b)
     {
         return a * b;
+    }
+
+    // Dictionary argument — sampler builds Dictionary<string,int> of 0..6
+    // entries, the rule reads two keys. Cross-validates dictionary
+    // shape + index access through JSON serialisation.
+    [Transpile, GenerateCrossTest(Samples = 10, Seed = 31)]
+    public static int CountTwoKeys(IReadOnlyDictionary<string, int> map, string a, string b)
+    {
+        int sum = 0;
+        if (map.ContainsKey(a)) sum += map[a];
+        if (map.ContainsKey(b)) sum += map[b];
+        return sum;
     }
 
     // do-while with break.

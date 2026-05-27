@@ -710,6 +710,30 @@ public static class TranspilerEngine
 
     static string EmitSwitchStatement(SwitchStatementSyntax sw, EmitContext ctx, string indent)
     {
+        // If every label is a plain constant / enum-member, fall through to
+        // the original TS switch shape. As soon as any section uses a
+        // relational / and / or pattern, rewrite the whole switch as an
+        // if-else-if chain over a captured copy of the governing
+        // expression — TS case labels don't accept those patterns.
+        bool needsRewrite = false;
+        foreach (var section in sw.Sections)
+        {
+            foreach (var label in section.Labels)
+            {
+                if (label is CasePatternSwitchLabelSyntax cp && !IsConstantLikePattern(cp.Pattern))
+                {
+                    needsRewrite = true;
+                    break;
+                }
+            }
+            if (needsRewrite) break;
+        }
+
+        if (needsRewrite)
+        {
+            return EmitSwitchStatementAsIfElse(sw, ctx, indent);
+        }
+
         var sb = new StringBuilder();
         sb.Append(indent).Append("switch (").Append(EmitExpression(sw.Expression, ctx)).AppendLine(") {");
         var caseIndent = indent + BodyIndent;
@@ -749,6 +773,80 @@ public static class TranspilerEngine
         return sb.ToString();
     }
 
+    static bool IsConstantLikePattern(PatternSyntax pattern) => pattern switch
+    {
+        ConstantPatternSyntax => true,
+        _ => false,
+    };
+
+    static string EmitSwitchStatementAsIfElse(SwitchStatementSyntax sw, EmitContext ctx, string indent)
+    {
+        var governing = EmitExpression(sw.Expression, ctx);
+        var sb = new StringBuilder();
+        sb.Append(indent).Append("{ const _v = ").Append(governing).AppendLine(";");
+        var innerIndent = indent + BodyIndent;
+        var bodyIndent = innerIndent + BodyIndent;
+        bool first = true;
+        foreach (var section in sw.Sections)
+        {
+            string cond = BuildSectionCondition(section, ctx);
+            if (cond == "true")
+            {
+                if (first)
+                {
+                    sb.Append(innerIndent).AppendLine("{");
+                }
+                else
+                {
+                    sb.Append(innerIndent).AppendLine("else {");
+                }
+            }
+            else
+            {
+                sb.Append(innerIndent).Append(first ? "if (" : "else if (").Append(cond).AppendLine(") {");
+            }
+            first = false;
+            foreach (var stmt in section.Statements)
+            {
+                // `break;` inside the original switch terminates the case;
+                // inside an if-else chain it's redundant (control already
+                // leaves the block), so drop it. Other `break;` (inside an
+                // inner loop) stay through the regular EmitStatement path,
+                // but we can't distinguish here, so we only drop bare top-
+                // level break statements.
+                if (stmt is BreakStatementSyntax) continue;
+                sb.Append(EmitStatement(stmt, ctx, bodyIndent));
+            }
+            sb.Append(innerIndent).AppendLine("}");
+        }
+        sb.Append(indent).AppendLine("}");
+        return sb.ToString();
+    }
+
+    static string BuildSectionCondition(SwitchSectionSyntax section, EmitContext ctx)
+    {
+        // Each section can carry multiple labels — OR them together. A
+        // default label collapses the section to `true`.
+        var parts = new List<string>();
+        foreach (var label in section.Labels)
+        {
+            switch (label)
+            {
+                case CaseSwitchLabelSyntax cs:
+                    parts.Add($"_v === {EmitExpression(cs.Value, ctx)}");
+                    break;
+                case DefaultSwitchLabelSyntax:
+                    return "true";
+                case CasePatternSwitchLabelSyntax cp:
+                    parts.Add(EmitPatternCondition(cp.Pattern, "_v", ctx));
+                    break;
+                default:
+                    throw new NotSupportedException($"Unsupported switch label: {label.Kind()}");
+            }
+        }
+        return parts.Count == 1 ? parts[0] : $"({string.Join(" || ", parts)})";
+    }
+
     static string EmitSwitchExpression(SwitchExpressionSyntax swx, EmitContext ctx)
     {
         // C# switch expressions don't have a TS counterpart — emit a self-
@@ -761,6 +859,25 @@ public static class TranspilerEngine
         sb.Append("const _v = ").Append(governing).Append("; ");
         foreach (var arm in swx.Arms)
         {
+            // Type / var patterns bind a fresh name to the governing value;
+            // wrap each binding arm in its own block so the const stays
+            // scoped and doesn't collide with sibling arms.
+            if (TryGetPatternBinding(arm.Pattern, out var bindName))
+            {
+                sb.Append("{ const ").Append(bindName).Append(" = _v; ");
+                if (arm.WhenClause is { } whenC)
+                {
+                    sb.Append("if (").Append(EmitExpression(whenC.Condition, ctx)).Append(") return ")
+                      .Append(EmitExpression(arm.Expression, ctx)).Append("; ");
+                }
+                else
+                {
+                    sb.Append("return ").Append(EmitExpression(arm.Expression, ctx)).Append("; ");
+                }
+                sb.Append("} ");
+                continue;
+            }
+
             string cond = arm.Pattern is DiscardPatternSyntax
                 ? "true"
                 : EmitPatternCondition(arm.Pattern, "_v", ctx);
@@ -784,6 +901,26 @@ public static class TranspilerEngine
         // values don't leak past the boundary.
         sb.Append("throw new Error(\"switch expression: no arm matched\"); })()");
         return sb.ToString();
+    }
+
+    static bool TryGetPatternBinding(PatternSyntax pattern, out string name)
+    {
+        name = string.Empty;
+        // `int n` / `int n when ...`
+        if (pattern is DeclarationPatternSyntax dp &&
+            dp.Designation is SingleVariableDesignationSyntax dpDes)
+        {
+            name = dpDes.Identifier.Text;
+            return true;
+        }
+        // `var n` / `var n when ...`
+        if (pattern is VarPatternSyntax vp &&
+            vp.Designation is SingleVariableDesignationSyntax vpDes)
+        {
+            name = vpDes.Identifier.Text;
+            return true;
+        }
+        return false;
     }
 
     static string EmitPatternCondition(PatternSyntax pattern, string governingVar, EmitContext ctx)
@@ -979,6 +1116,11 @@ public static class TranspilerEngine
             return raw;
         }
 
+        if (TryMapDictionaryInvocation(inv, target, ctx, out var dictEmit))
+        {
+            return dictEmit;
+        }
+
         if (!IsTranspileMethodSymbol(target))
         {
             throw new NotSupportedException(
@@ -986,6 +1128,34 @@ public static class TranspilerEngine
         }
 
         return $"{target.Name}({args})";
+    }
+
+    static bool TryMapDictionaryInvocation(InvocationExpressionSyntax inv, IMethodSymbol target, EmitContext ctx, out string emit)
+    {
+        emit = string.Empty;
+        if (target.ContainingType is null) return false;
+        var def = target.ContainingType.OriginalDefinition.ToDisplayString();
+        if (def is not (
+            "System.Collections.Generic.Dictionary<TKey, TValue>"
+            or "System.Collections.Generic.IReadOnlyDictionary<TKey, TValue>"
+            or "System.Collections.Generic.IDictionary<TKey, TValue>"))
+        {
+            return false;
+        }
+
+        // ContainsKey(key) -> `(key in obj)` (TS-side membership test).
+        // The C# member is a method call on an instance, so its expression
+        // form is `<receiver>.ContainsKey(<arg>)` — we synthesise the TS
+        // shape from the receiver of the member access.
+        if (target.Name == "ContainsKey" && inv.Expression is MemberAccessExpressionSyntax mae &&
+            inv.ArgumentList.Arguments.Count == 1)
+        {
+            var receiver = EmitExpression(mae.Expression, ctx);
+            var key = EmitExpression(inv.ArgumentList.Arguments[0].Expression, ctx);
+            emit = $"({key} in {receiver})";
+            return true;
+        }
+        return false;
     }
 
     // System.Math / System.MathF members whose semantics we trust to be

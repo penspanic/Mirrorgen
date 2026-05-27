@@ -274,6 +274,26 @@ public static class FixtureGenerator
                 }
                 return list;
             }
+            if (def == typeof(Dictionary<,>) || def == typeof(IReadOnlyDictionary<,>) || def == typeof(IDictionary<,>))
+            {
+                var keyType = t.GetGenericArguments()[0];
+                var valType = t.GetGenericArguments()[1];
+                var dictType = typeof(Dictionary<,>).MakeGenericType(keyType, valType);
+                var dict = (System.Collections.IDictionary)Activator.CreateInstance(dictType)!;
+                int entries = rng.Next(0, 7);
+                // Generous attempt count — random key collisions can shrink
+                // an int-keyed dictionary below `entries`, which is fine for
+                // sampling but we shouldn't loop forever on a tiny key space.
+                int attempts = 0;
+                while (dict.Count < entries && attempts < entries * 4 + 8)
+                {
+                    attempts++;
+                    var key = GenerateArg(keyType, paramName, methodName, rng, registry);
+                    if (dict.Contains(key)) continue;
+                    dict.Add(key, GenerateArg(valType, paramName, methodName, rng, registry));
+                }
+                return dict;
+            }
         }
 
         if (t.IsEnum && HasAttribute(t, TranspileAttributeName))

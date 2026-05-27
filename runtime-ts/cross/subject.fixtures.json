@@ -1184,6 +1184,112 @@
     ]
   },
   {
+    "name": "CountTwoKeys",
+    "calls": [
+      {
+        "args": [
+          {
+            "ClnQ0.1UiS NSz6": 462409535,
+            "9Dp4W": 998488556,
+            "hdPOYYEhUHRKuv4": 1678334718,
+            "6": 2024758237,
+            "aTj1A": 1004890496,
+            "CWe76YeH7": -382056218
+          },
+          "SzL-aONDO",
+          "MQV0c E-y."
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {
+            "e8": -1065938593,
+            "fUWmU1N": -1368533887
+          },
+          "m0",
+          "5p-0kBlgWic 1"
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {},
+          "Ku",
+          "EOkHW5E52hk"
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {
+            "slLimlsYfoxxM": 1498536198,
+            "SDfuFWlPxGgwsMd": -2019801070
+          },
+          "YZqa-",
+          "c6zz1j"
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {
+            "o_": -320947912
+          },
+          "g",
+          "K.9YU"
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {},
+          "FGkAcr9EQSGVrMw",
+          "1ov8itCz5o_oZ"
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {
+            "rtg": 886253016,
+            "Ah7": -515781465
+          },
+          "Elw2X",
+          "niK"
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {
+            "1l": 109412974,
+            "2sVSwDpBl": -377690722
+          },
+          "BhBSy--nJ",
+          "pbMmS6"
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {},
+          "p3D5",
+          "PIe."
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          {},
+          "9RLXPUD-FDofK.Cc",
+          "gkYws6 OhJ2"
+        ],
+        "expected": 0
+      }
+    ]
+  },
+  {
     "name": "FirstNonNegativeStep",
     "calls": [
       {

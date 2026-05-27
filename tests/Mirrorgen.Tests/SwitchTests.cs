@@ -140,20 +140,38 @@ public class SwitchTests
     }
 
     [Fact]
-    public void Switch_Var_Pattern_Throws_NotSupported()
+    public void Switch_Type_Pattern_Binds_And_Tests_Guard()
     {
-        Assert.Throws<NotSupportedException>(() =>
-            TranspilerEngine.TranspileSource("""
-                public static class S {
-                    [Mirrorgen.Attributes.Transpile]
-                    public static int F(int x) {
-                        return x switch {
-                            int n when n > 0 => 1,
-                            _ => 0,
-                        };
-                    }
+        var ts = TranspilerEngine.TranspileSource("""
+            public static class S {
+                [Mirrorgen.Attributes.Transpile]
+                public static int F(int x) {
+                    return x switch {
+                        int n when n > 0 => n * 2,
+                        _ => 0,
+                    };
                 }
-                """));
+            }
+            """);
+        Assert.Contains("{ const n = _v;", ts);
+        Assert.Contains("if (n > 0) return Math.imul(n, 2);", ts);
+    }
+
+    [Fact]
+    public void Switch_Var_Pattern_Binds_Without_Guard()
+    {
+        var ts = TranspilerEngine.TranspileSource("""
+            public static class S {
+                [Mirrorgen.Attributes.Transpile]
+                public static int F(int x) {
+                    return x switch {
+                        var n => n,
+                    };
+                }
+            }
+            """);
+        Assert.Contains("{ const n = _v;", ts);
+        Assert.Contains("return n;", ts);
     }
 
     [Fact]
@@ -208,6 +226,48 @@ public class SwitchTests
             }
             """);
         Assert.Contains("(_v === 1 || _v === 2)", ts);
+    }
+
+    [Fact]
+    public void Switch_Statement_With_Relational_Rewrites_To_If_Else()
+    {
+        var ts = TranspilerEngine.TranspileSource("""
+            public static class S {
+                [Mirrorgen.Attributes.Transpile]
+                public static int F(int x) {
+                    switch (x) {
+                        case > 0: return 1;
+                        case < 0: return -1;
+                        default: return 0;
+                    }
+                }
+            }
+            """);
+        Assert.Contains("{ const _v = x;", ts);
+        Assert.Contains("if (_v > 0) {", ts);
+        Assert.Contains("else if (_v < 0) {", ts);
+        Assert.Contains("else {", ts);
+    }
+
+    [Fact]
+    public void Switch_Statement_Constant_Labels_Keep_TS_Switch_Shape()
+    {
+        var ts = TranspilerEngine.TranspileSource("""
+            public static class S {
+                [Mirrorgen.Attributes.Transpile]
+                public static int F(int x) {
+                    switch (x) {
+                        case 1: return 10;
+                        case 2: return 20;
+                        default: return 0;
+                    }
+                }
+            }
+            """);
+        // Pure-constant labels keep the original TS switch — no const _v rewrite.
+        Assert.Contains("switch (x) {", ts);
+        Assert.Contains("case 1:", ts);
+        Assert.DoesNotContain("const _v = x;", ts);
     }
 
     [Fact]
