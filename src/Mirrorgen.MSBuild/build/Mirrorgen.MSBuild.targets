@@ -1,14 +1,17 @@
 <Project>
 
     <UsingTask TaskName="Mirrorgen.MSBuild.MirrorgenTask" AssemblyFile="$(MirrorgenTasksAssembly)" />
+    <UsingTask TaskName="Mirrorgen.MSBuild.MirrorgenFixturesTask" AssemblyFile="$(MirrorgenTasksAssembly)" />
 
     <PropertyGroup>
         <MirrorgenSourceRoot Condition="'$(MirrorgenSourceRoot)' == ''">$(MSBuildProjectDirectory)</MirrorgenSourceRoot>
+        <MirrorgenFixturesOutput Condition="'$(MirrorgenFixturesOutput)' == ''">$(MirrorgenOutput)fixtures.json</MirrorgenFixturesOutput>
+        <MirrorgenEmitFixtures Condition="'$(MirrorgenEmitFixtures)' == ''">false</MirrorgenEmitFixtures>
     </PropertyGroup>
 
     <!--
       IntermediateOutputPath is filled in by the SDK after this file is
-      imported, so the stamp file path is referenced inline in the target
+      imported, so stamp file paths are referenced inline in the target
       attributes (which are evaluated lazily) rather than captured into a
       property at import time.
     -->
@@ -22,6 +25,23 @@
                        SourceRoot="$(MirrorgenSourceRoot)"
                        OutputDirectory="$(MirrorgenOutput)" />
         <Touch Files="$(IntermediateOutputPath)mirrorgen.stamp" AlwaysCreate="true" />
+    </Target>
+
+    <!--
+      The fixtures task runs after the assembly is fully linked (AfterTargets
+      AfterBuild) so it can reflect over the just-built dll. Gated behind
+      MirrorgenEmitFixtures so projects that only want types/methods mirrored
+      don't pay the reflection cost.
+    -->
+    <Target Name="MirrorgenEmitFixtures"
+            AfterTargets="Build"
+            Condition="'$(MirrorgenOutput)' != '' and '$(MirrorgenEmitFixtures)' == 'true'"
+            Inputs="$(TargetPath)"
+            Outputs="$(IntermediateOutputPath)mirrorgen.fixtures.stamp">
+        <MakeDir Directories="$(IntermediateOutputPath)" />
+        <MirrorgenFixturesTask AssemblyPath="$(TargetPath)"
+                               OutputPath="$(MirrorgenFixturesOutput)" />
+        <Touch Files="$(IntermediateOutputPath)mirrorgen.fixtures.stamp" AlwaysCreate="true" />
     </Target>
 
 </Project>

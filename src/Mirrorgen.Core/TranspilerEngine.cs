@@ -381,6 +381,15 @@ public static class TranspilerEngine
         {
             return $"{MapType(nt.ElementType)} | null";
         }
+        if (type is GenericNameSyntax gen)
+        {
+            var genericName = gen.Identifier.Text;
+            if (genericName is "List" or "IReadOnlyList" or "IList" && gen.TypeArgumentList.Arguments.Count == 1)
+            {
+                return $"{MapType(gen.TypeArgumentList.Arguments[0])}[]";
+            }
+            throw new NotSupportedException($"Unsupported generic type: {type}");
+        }
         var s = type.ToString();
         return s switch
         {
@@ -413,6 +422,16 @@ public static class TranspilerEngine
             type is INamedTypeSymbol nullable && nullable.TypeArguments.Length == 1)
         {
             return $"{MapTypeSymbol(nullable.TypeArguments[0])} | null";
+        }
+        if (type is INamedTypeSymbol named && named.IsGenericType && named.TypeArguments.Length == 1)
+        {
+            var def = named.OriginalDefinition.ToDisplayString();
+            if (def is "System.Collections.Generic.List<T>"
+                or "System.Collections.Generic.IReadOnlyList<T>"
+                or "System.Collections.Generic.IList<T>")
+            {
+                return $"{MapTypeSymbol(named.TypeArguments[0])}[]";
+            }
         }
         return type.SpecialType switch
         {
@@ -526,10 +545,10 @@ public static class TranspilerEngine
     static string EmitForEachStatement(ForEachStatementSyntax fe, EmitContext ctx, string indent)
     {
         var collectionType = ctx.TypeOf(fe.Expression);
-        if (collectionType is not IArrayTypeSymbol)
+        if (!IsArrayLikeEnumerable(collectionType))
         {
             throw new NotSupportedException(
-                $"foreach only supports T[] in v0.1; got '{collectionType?.ToDisplayString() ?? "unknown"}'. Move LINQ / List<T> enumeration outside the transpile boundary.");
+                $"foreach only supports T[] / List<T> / IReadOnlyList<T> in v0.1; got '{collectionType?.ToDisplayString() ?? "unknown"}'.");
         }
 
         var collection = EmitExpression(fe.Expression, ctx);
@@ -538,6 +557,19 @@ public static class TranspilerEngine
         sb.Append(EmitBranchBody(fe.Statement, ctx, indent + BodyIndent));
         sb.Append(indent).AppendLine("}");
         return sb.ToString();
+    }
+
+    static bool IsArrayLikeEnumerable(ITypeSymbol? type)
+    {
+        if (type is IArrayTypeSymbol) return true;
+        if (type is INamedTypeSymbol named && named.IsGenericType && named.TypeArguments.Length == 1)
+        {
+            var def = named.OriginalDefinition.ToDisplayString();
+            return def is "System.Collections.Generic.List<T>"
+                or "System.Collections.Generic.IReadOnlyList<T>"
+                or "System.Collections.Generic.IList<T>";
+        }
+        return false;
     }
 
     static string EmitLocalDeclaration(LocalDeclarationStatementSyntax local, EmitContext ctx, string indent)
@@ -635,6 +667,12 @@ public static class TranspilerEngine
                 return EmitInvocation(inv, ctx);
             case MemberAccessExpressionSyntax member when member.IsKind(SyntaxKind.SimpleMemberAccessExpression):
                 return $"{EmitExpression(member.Expression, ctx)}.{member.Name.Identifier.Text}";
+            case ElementAccessExpressionSyntax ea:
+                {
+                    var indices = string.Join(", ",
+                        ea.ArgumentList.Arguments.Select(a => EmitExpression(a.Expression, ctx)));
+                    return $"{EmitExpression(ea.Expression, ctx)}[{indices}]";
+                }
             default:
                 throw new NotSupportedException($"Unsupported expression: {expr.Kind()}");
         }

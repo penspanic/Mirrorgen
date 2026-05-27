@@ -11,6 +11,9 @@
         <!-- Where the MSBuild target writes the emitted .ts files. -->
         <MirrorgenOutput>$(MSBuildThisFileDirectory)..\client\src\_generated\</MirrorgenOutput>
         <MirrorgenSourceRoot>$(MSBuildThisFileDirectory)</MirrorgenSourceRoot>
+        <!-- Also capture C# expected outputs from [GenerateCrossTest] members. -->
+        <MirrorgenEmitFixtures>true</MirrorgenEmitFixtures>
+        <MirrorgenFixturesOutput>$(MirrorgenOutput)Pricing.fixtures.json</MirrorgenFixturesOutput>
     </PropertyGroup>
 
     <ItemGroup>

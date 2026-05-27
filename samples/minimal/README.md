@@ -30,12 +30,13 @@ regen.sh                 # build + fixtures + vitest in one command
 What happens:
 
 1. `dotnet build Rules.csproj` runs the Mirrorgen MSBuild target, which
-   transpiles every `[Transpile]`-marked member in `Pricing.cs` into
-   `client/src/_generated/Pricing.ts`. Subsequent builds are no-ops as
-   long as the sources are unchanged.
-2. `mirrorgen fixtures …Rules.dll` captures C# expected outputs from the
-   just-built assembly into `Pricing.fixtures.json`.
-3. `vitest` re-runs every recorded sample against the emitted TS and
+   - transpiles every `[Transpile]`-marked member in `Pricing.cs` into
+     `client/src/_generated/Pricing.ts`, and
+   - reflects over the just-built assembly to capture C# expected outputs
+     from every `[GenerateCrossTest]` method into
+     `client/src/_generated/Pricing.fixtures.json`.
+   Subsequent builds are no-ops as long as the sources are unchanged.
+2. `vitest` re-runs every recorded sample against the emitted TS and
    asserts byte-equivalence.
 
 A clean run prints 48 passing cross-tests (3 methods × 16 random samples each).
@@ -63,10 +64,6 @@ single `<PackageReference Include="Mirrorgen.MSBuild" PrivateAssets="all" />`.
 
 ## What this sample doesn't yet show
 
-- **Fixture emit through MSBuild.** `[GenerateCrossTest]` capture is still
-  driven by the CLI, not the MSBuild target — so cross-validation refresh
-  needs an explicit `mirrorgen fixtures` step. Folding that into the same
-  target is a follow-up.
 - **Cross-validation for record-typed methods.** `[GenerateCrossTest]`
   only samples primitive + string arguments today, so the OrderLine record
   and DiscountKind enum are emitted as types but aren't fed into the

@@ -69,7 +69,7 @@ public class LoopTests
     }
 
     [Fact]
-    public void ForEach_NonArray_Throws()
+    public void ForEach_Over_Unsupported_Collection_Throws()
     {
         Assert.Throws<NotSupportedException>(() =>
             TranspilerEngine.TranspileSource("""
@@ -77,10 +77,10 @@ public class LoopTests
 
                 public static class S {
                     [Mirrorgen.Attributes.Transpile]
-                    public static int Sum(List<int> arr) {
-                        int total = 0;
-                        foreach (var x in arr) total += x;
-                        return total;
+                    public static int Count(HashSet<int> set) {
+                        int n = 0;
+                        foreach (var x in set) n++;
+                        return n;
                     }
                 }
                 """));
