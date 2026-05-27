@@ -398,12 +398,17 @@ public static class TranspilerEngine
         var s = type.ToString();
         return s switch
         {
-            "int" or "long" or "short" or "byte" or "sbyte"
-                or "uint" or "ulong" or "ushort"
+            "int" or "short" or "byte" or "sbyte"
+                or "uint" or "ushort"
                 or "float" or "double" => "number",
             "bool" => "boolean",
             "string" => "string",
             "void" => "void",
+            // 64-bit integers don't fit safely in a JS Number above 2^53.
+            // BigInt emission is queued for v0.2 — for now, refuse to emit
+            // rather than silently lose precision.
+            "long" or "ulong"
+                => throw new NotSupportedException($"64-bit integer type '{s}' is not supported in v0.1 (would lose precision as a JS Number above 2^53). Convert at the transpile boundary or wait for v0.2 BigInt support."),
             "decimal" or "char" or "object" or "dynamic"
                 => throw new NotSupportedException($"Unsupported primitive type: {s}"),
             // Unknown identifier — assume it's a reference to another transpiled
@@ -448,13 +453,15 @@ public static class TranspilerEngine
         }
         return type.SpecialType switch
         {
-            SpecialType.System_Int32 or SpecialType.System_Int64 or SpecialType.System_Int16
+            SpecialType.System_Int32 or SpecialType.System_Int16
                 or SpecialType.System_Byte or SpecialType.System_SByte
-                or SpecialType.System_UInt32 or SpecialType.System_UInt64 or SpecialType.System_UInt16
+                or SpecialType.System_UInt32 or SpecialType.System_UInt16
                 or SpecialType.System_Single or SpecialType.System_Double => "number",
             SpecialType.System_Boolean => "boolean",
             SpecialType.System_String => "string",
             SpecialType.System_Void => "void",
+            SpecialType.System_Int64 or SpecialType.System_UInt64
+                => throw new NotSupportedException($"64-bit integer type '{type.Name}' is not supported in v0.1 (precision loss above 2^53). Wait for v0.2 BigInt support."),
             // Same fallback as MapType: assume reference to another transpiled type.
             _ => type.Name,
         };

@@ -13,14 +13,15 @@ The high-level rationale lives in [`CONCEPT.md`](CONCEPT.md); this file is the e
 Supported:
 - `enum` (int-backed)
 - `record` (positional or property-init)
-- `class` and `struct` with only get-only / init-only properties
-- Primitive types: `bool`, `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `long` (BigInt), `float`, `double`, `string`
-- `T[]`, `List<T>`, `IReadOnlyList<T>` (all emitted as `T[]`)
-- `Dictionary<K,V>`, `IReadOnlyDictionary<K,V>` (emitted as `Record<K,V>` with string-coercible K)
+- `class` and `struct` with properties (get-only, init-only, or `get; set;`) and public fields
+- Primitive types: `bool`, `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `float`, `double`, `string`
+- `T[]`, `List<T>`, `IReadOnlyList<T>`, `IList<T>` (all emitted as `T[]`)
+- `Dictionary<K,V>`, `IReadOnlyDictionary<K,V>`, `IDictionary<K,V>` (emitted as `Record<K,V>` with string-coercible K)
 - `Nullable<T>` (emitted as `T | null`)
 - Transitive reachability — leaf types reached from a marked type don't need their own attribute
 
 Not supported in v0.1:
+- 64-bit integers (`long`, `ulong`) — would lose precision above 2^53 as a JS Number. BigInt emission is deferred to v0.2; for now the walker rejects them.
 - Mutable collections beyond construction
 - `Tuple<...>` / `ValueTuple` — encourage records instead
 - Custom generic types defined by user code (deferred to v0.3)
@@ -37,7 +38,7 @@ Supported:
   - Multiplication on int / uint → `Math.imul` (avoids JS Number precision loss)
 - Boolean operators and comparisons
 - `if` / `else`
-- `for` (C-style), `foreach` (over `T[]` only in v0.1)
+- `for` (C-style), `foreach` (over `T[]`, `List<T>`, `IReadOnlyList<T>`, `IList<T>`)
 - `switch` statement and `switch` expression (constant patterns and type patterns over enums)
 - Method calls to other `[Transpile]` methods within the same project
 - Method calls to a whitelisted set of `System.Math.*` / `System.MathF.*` functions

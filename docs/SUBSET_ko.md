@@ -13,14 +13,15 @@ v0.1 transpiler 가 받아들이는 정확한 명세. 여기 나열되지 않은
 지원:
 - `enum` (int-backed)
 - `record` (positional 또는 property-init)
-- `class` 와 `struct` (get-only / init-only property 만)
-- Primitive: `bool`, `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `long` (BigInt), `float`, `double`, `string`
-- `T[]`, `List<T>`, `IReadOnlyList<T>` (모두 `T[]` 로 emit)
-- `Dictionary<K,V>`, `IReadOnlyDictionary<K,V>` (`Record<K,V>` 로 emit, K 는 string-coercible)
+- `class` 와 `struct` — property (get-only, init-only, `get; set;`) 및 public field
+- Primitive: `bool`, `byte`, `sbyte`, `short`, `ushort`, `int`, `uint`, `float`, `double`, `string`
+- `T[]`, `List<T>`, `IReadOnlyList<T>`, `IList<T>` (모두 `T[]` 로 emit)
+- `Dictionary<K,V>`, `IReadOnlyDictionary<K,V>`, `IDictionary<K,V>` (`Record<K,V>` 로 emit, K 는 string-coercible)
 - `Nullable<T>` (`T | null` 로 emit)
 - Transitive reachability — marked type 에서 도달 가능한 leaf type 은 자체 attribute 불필요
 
 v0.1 에 지원 안 함:
+- 64-bit 정수 (`long`, `ulong`) — JS Number 로 emit 시 2^53 위로 정밀도 손실. BigInt emit 은 v0.2 로 미룸; 지금은 walker 가 거부.
 - 생성 이후 mutable collection
 - `Tuple<...>` / `ValueTuple` — record 권장
 - 사용자 정의 generic type (v0.3 으로 연기)
@@ -37,7 +38,7 @@ v0.1 에 지원 안 함:
   - int / uint 곱셈 → `Math.imul` (JS Number 정밀도 손실 회피)
 - Boolean operator, 비교
 - `if` / `else`
-- `for` (C-style), `foreach` (v0.1 에선 `T[]` 만)
+- `for` (C-style), `foreach` (`T[]`, `List<T>`, `IReadOnlyList<T>`, `IList<T>`)
 - `switch` statement, `switch` expression (enum 의 constant pattern + type pattern)
 - 같은 프로젝트의 다른 `[Transpile]` 메서드 호출
 - 허용 리스트의 `System.Math.*` / `System.MathF.*` 함수 호출
