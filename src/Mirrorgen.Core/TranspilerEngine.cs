@@ -2300,6 +2300,13 @@ public static class TranspilerEngine
                 }
                 return $"({inner})";
         }
+        // User-declared enum target: TS strict mode refuses `number → MyEnum`
+        // without an explicit cast. Emit `as EnumName` so callers that assign
+        // the result to an enum-typed variable type-check.
+        if (targetSymbol is INamedTypeSymbol enumTarget && enumTarget.TypeKind == TypeKind.Enum)
+        {
+            return $"({inner} as {enumTarget.Name})";
+        }
         // Other casts (float/double) intentionally fall through to a
         // bare paren wrap for now — future issues extend this set.
         return $"({inner})";

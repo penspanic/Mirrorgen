@@ -94,4 +94,24 @@ public class RecordConstructionTests
         Assert.Contains("Id: number;", ts);
         Assert.DoesNotContain("IsZero", ts);
     }
+
+    [Fact]
+    public void Cast_To_User_Enum_Emits_TS_As_Keyword()
+    {
+        // `(CubeFace)x` in TS strict mode needs `as CubeFace` so the
+        // assignment to a `CubeFace`-typed local type-checks. Without it,
+        // emit would produce `let f: CubeFace = (x)` which strict mode
+        // rejects (number → enum is not implicit).
+        var ts = TranspilerEngine.TranspileSource("""
+            using System;
+            public enum CubeFace : byte { PosX = 0, NegX = 1 }
+            public static class S {
+                [Mirrorgen.Transpile]
+                public static CubeFace FaceOf(int raw) {
+                    return (CubeFace)raw;
+                }
+            }
+            """);
+        Assert.Contains("as CubeFace", ts);
+    }
 }
