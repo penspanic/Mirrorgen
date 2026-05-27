@@ -797,7 +797,15 @@ public static class TranspilerEngine
 
         if (TryMapMathInvocation(target, out var jsName))
         {
-            return $"Math.{jsName}({args})";
+            var raw = $"Math.{jsName}({args})";
+            // Math.Abs(int.MinValue) overflows JS Number land (returns 2^31)
+            // while C# unchecked Abs returns int.MinValue. Wrap so both sides
+            // produce the same int32 bit pattern.
+            if (target.Name == "Abs" && ctx.IsInt32(inv))
+            {
+                return $"({raw} | 0)";
+            }
+            return raw;
         }
 
         if (!IsTranspileMethodSymbol(target))

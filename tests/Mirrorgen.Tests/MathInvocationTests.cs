@@ -31,9 +31,18 @@ public class MathInvocationTests
     }
 
     [Fact]
-    public void Math_Abs_Emits_JS_Math_abs()
+    public void Math_Abs_Int_Wraps_To_Cover_IntMinValue_Edge()
     {
+        // Math.abs(int.MinValue) in JS lands at 2^31, outside int32. The `| 0`
+        // wrap brings it back to int.MinValue so C# (unchecked) and JS agree.
         var ts = Transpile("return Math.Abs(x);", paramList: "int x");
+        Assert.Contains("return (Math.abs(x) | 0);", ts);
+    }
+
+    [Fact]
+    public void Math_Abs_Double_Does_Not_Wrap()
+    {
+        var ts = Transpile("return Math.Abs(x);", returnType: "double", paramList: "double x");
         Assert.Contains("return Math.abs(x);", ts);
     }
 
