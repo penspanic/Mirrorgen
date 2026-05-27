@@ -1988,6 +1988,11 @@ public static class TranspilerEngine
         }
         var srcSpecial = ctx.TypeOf(cast.Expression)?.SpecialType ?? SpecialType.None;
         var srcIsBigInt = srcSpecial == SpecialType.System_Int64 || srcSpecial == SpecialType.System_UInt64;
+        bool srcIsNumber =
+            srcSpecial is SpecialType.System_Int32 or SpecialType.System_Int16
+            or SpecialType.System_Byte or SpecialType.System_SByte
+            or SpecialType.System_UInt32 or SpecialType.System_UInt16
+            or SpecialType.System_Single or SpecialType.System_Double;
 
         switch (targetSymbol.SpecialType)
         {
@@ -2015,8 +2020,29 @@ public static class TranspilerEngine
                 return srcIsBigInt
                     ? $"Number(BigInt.asUintN(32, {inner}))"
                     : $"(({inner}) >>> 0)";
+            case SpecialType.System_Int32:
+                // `(int)ulong` / `(int)long` — collapse bigint back to a
+                // number with the 32-bit i32 reinterpretation (matches C#
+                // unchecked conversion). Without this, `(int)(1UL & x)`
+                // emits a bigint that TS refuses to assign to `number`.
+                if (srcIsBigInt)
+                {
+                    return $"Number(BigInt.asIntN(32, {inner}))";
+                }
+                return $"({inner})";
+            case SpecialType.System_Int64:
+            case SpecialType.System_UInt64:
+                // `(ulong)int` / `(long)int` — promote a JS number into bigint
+                // so subsequent shifts / bit ops stay in BigInt land. Without
+                // this, `(ulong)(s * s) * (ulong)((3 * rx) ^ ry)` emits as a
+                // number multiply (bigint × number is a TS type error).
+                if (srcIsNumber)
+                {
+                    return $"BigInt({inner})";
+                }
+                return $"({inner})";
         }
-        // Other casts (int/long/float/double) intentionally fall through to a
+        // Other casts (float/double) intentionally fall through to a
         // bare paren wrap for now — future issues extend this set.
         return $"({inner})";
     }
@@ -2428,6 +2454,27 @@ public static class TranspilerEngine
                 "*" => $"Math.imul({left}, {right})",
                 _ => $"(({left} {op} {right}) | 0)",
             };
+        }
+
+        // Bigint shift in C# allows `ulong << int` / `long << int`. TS BigInt
+        // requires the shift count to also be bigint. Mid-emit promotion is
+        // the only safe rewrite — caller's intent (shifting a bigint by an
+        // int amount) survives identically.
+        var kind = bin.OperatorToken.Kind();
+        bool isShift = kind == SyntaxKind.LessThanLessThanToken ||
+                       kind == SyntaxKind.GreaterThanGreaterThanToken;
+        if (isShift)
+        {
+            var lhsType = ctx.TypeOf(bin.Left)?.SpecialType ?? SpecialType.None;
+            var rhsType = ctx.TypeOf(bin.Right)?.SpecialType ?? SpecialType.None;
+            bool lhsIsBigInt = lhsType is SpecialType.System_Int64 or SpecialType.System_UInt64;
+            bool rhsIsNumber = rhsType is SpecialType.System_Int32 or SpecialType.System_Int16
+                or SpecialType.System_Byte or SpecialType.System_SByte
+                or SpecialType.System_UInt32 or SpecialType.System_UInt16;
+            if (lhsIsBigInt && rhsIsNumber)
+            {
+                right = $"BigInt({right})";
+            }
         }
 
         // long / ulong → BigInt arithmetic with explicit asIntN(64) /
