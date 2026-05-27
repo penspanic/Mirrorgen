@@ -298,6 +298,19 @@ public static class TranspilerEngine
     static string EmitMethod(MethodDeclarationSyntax method, EmitContext ctx)
     {
         var name = ReadEmitName(method.AttributeLists) ?? method.Identifier.Text;
+
+        // Generic methods carry their type parameters straight through to
+        // TS; v0.2 doesn't translate `where T : …` constraints, so any
+        // constraint clause is rejected loudly.
+        if (method.ConstraintClauses.Count > 0)
+        {
+            throw new NotSupportedException(
+                $"Generic constraints on '{method.Identifier.Text}' are not supported in v0.2 (got '{string.Join(", ", method.ConstraintClauses.Select(c => c.ToString()))}').");
+        }
+        var typeParams = method.TypeParameterList is { } tpl && tpl.Parameters.Count > 0
+            ? $"<{string.Join(", ", tpl.Parameters.Select(p => p.Identifier.Text))}>"
+            : string.Empty;
+
         var returnType = MapType(method.ReturnType, ctx);
         var parameters = string.Join(
             ", ",
@@ -307,7 +320,7 @@ public static class TranspilerEngine
                     : $"{p.Identifier.Text}: {MapType(p.Type, ctx)}"));
 
         var sb = new StringBuilder();
-        sb.Append("export function ").Append(name).Append('(').Append(parameters).Append("): ").Append(returnType).AppendLine(" {");
+        sb.Append("export function ").Append(name).Append(typeParams).Append('(').Append(parameters).Append("): ").Append(returnType).AppendLine(" {");
         sb.Append(EmitMethodBody(method, ctx));
         sb.AppendLine("}");
         return sb.ToString();
