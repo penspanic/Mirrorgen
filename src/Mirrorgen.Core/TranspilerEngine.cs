@@ -384,9 +384,14 @@ public static class TranspilerEngine
         if (type is GenericNameSyntax gen)
         {
             var genericName = gen.Identifier.Text;
-            if (genericName is "List" or "IReadOnlyList" or "IList" && gen.TypeArgumentList.Arguments.Count == 1)
+            var args = gen.TypeArgumentList.Arguments;
+            if (genericName is "List" or "IReadOnlyList" or "IList" && args.Count == 1)
             {
-                return $"{MapType(gen.TypeArgumentList.Arguments[0])}[]";
+                return $"{MapType(args[0])}[]";
+            }
+            if (genericName is "Dictionary" or "IReadOnlyDictionary" or "IDictionary" && args.Count == 2)
+            {
+                return $"Record<{MapType(args[0])}, {MapType(args[1])}>";
             }
             throw new NotSupportedException($"Unsupported generic type: {type}");
         }
@@ -423,14 +428,22 @@ public static class TranspilerEngine
         {
             return $"{MapTypeSymbol(nullable.TypeArguments[0])} | null";
         }
-        if (type is INamedTypeSymbol named && named.IsGenericType && named.TypeArguments.Length == 1)
+        if (type is INamedTypeSymbol named && named.IsGenericType)
         {
             var def = named.OriginalDefinition.ToDisplayString();
-            if (def is "System.Collections.Generic.List<T>"
-                or "System.Collections.Generic.IReadOnlyList<T>"
-                or "System.Collections.Generic.IList<T>")
+            if (named.TypeArguments.Length == 1 &&
+                def is "System.Collections.Generic.List<T>"
+                    or "System.Collections.Generic.IReadOnlyList<T>"
+                    or "System.Collections.Generic.IList<T>")
             {
                 return $"{MapTypeSymbol(named.TypeArguments[0])}[]";
+            }
+            if (named.TypeArguments.Length == 2 &&
+                def is "System.Collections.Generic.Dictionary<TKey, TValue>"
+                    or "System.Collections.Generic.IReadOnlyDictionary<TKey, TValue>"
+                    or "System.Collections.Generic.IDictionary<TKey, TValue>")
+            {
+                return $"Record<{MapTypeSymbol(named.TypeArguments[0])}, {MapTypeSymbol(named.TypeArguments[1])}>";
             }
         }
         return type.SpecialType switch

@@ -69,6 +69,33 @@ public class CollectionTests
     }
 
     [Fact]
+    public void DictionaryStringInt_Emits_Record_Of_StringNumber()
+    {
+        var ts = TranspilerEngine.TranspileSource("""
+            using System.Collections.Generic;
+
+            [Mirrorgen.Attributes.Transpile]
+            public record Inventory(Dictionary<string, int> Counts);
+            """);
+        Assert.Contains("  Counts: Record<string, number>;", ts);
+    }
+
+    [Fact]
+    public void IReadOnlyDictionaryIntString_In_Method_Parameter()
+    {
+        var ts = TranspilerEngine.TranspileSource("""
+            using System.Collections.Generic;
+
+            public static class S
+            {
+                [Mirrorgen.Attributes.Transpile]
+                public static string Lookup(IReadOnlyDictionary<int, string> map, int key) => map[key];
+            }
+            """);
+        Assert.Contains("Lookup(map: Record<number, string>, key: number): string", ts);
+    }
+
+    [Fact]
     public void Unsupported_Generic_Throws()
     {
         Assert.Throws<NotSupportedException>(() =>
@@ -76,7 +103,7 @@ public class CollectionTests
                 using System.Collections.Generic;
 
                 [Mirrorgen.Attributes.Transpile]
-                public record Bad(Dictionary<string, int> Map);
+                public record Bad(HashSet<int> Items);
                 """));
     }
 }
