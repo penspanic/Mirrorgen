@@ -124,11 +124,13 @@ public class TranspileTests
     [Fact]
     public void Unsupported_Type_Throws()
     {
+        // `char` remains unsupported — TS has no native single-character type.
+        // decimal is now mapped to `number` for TsGen wire parity (v0.3).
         Assert.Throws<NotSupportedException>(() =>
             TranspilerEngine.TranspileSource("""
                 public static class S {
                     [Mirrorgen.Attributes.Transpile]
-                    public static decimal Money() => 1m;
+                    public static char Initial() => 'A';
                 }
                 """));
     }

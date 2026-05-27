@@ -963,13 +963,19 @@ public static class TranspilerEngine
         {
             "int" or "short" or "byte" or "sbyte"
                 or "uint" or "ushort"
-                or "float" or "double" => "number",
+                or "float" or "double" or "decimal" => "number",
             "bool" => "boolean",
             "string" => "string",
             "void" => "void",
             "long" or "ulong" => "bigint",
-            "decimal" or "char" or "object" or "dynamic"
-                => throw new NotSupportedException($"Unsupported primitive type: {s}"),
+            // System.Text.Json default wire encoding for these is an ISO 8601 /
+            // RFC string; TS contracts treat them as opaque strings until the
+            // consumer chooses a parsing strategy.
+            "Guid" or "DateTime" or "DateTimeOffset" or "TimeSpan" or "Uri" => "string",
+            // Opaque JSON payloads — DTOs use these as escape hatches; the
+            // shape is by definition unknown at the contract level.
+            "object" or "dynamic" or "JsonElement" or "JsonNode" or "JsonObject" or "JsonArray" => "unknown",
+            "char" => throw new NotSupportedException($"Unsupported primitive type: {s}"),
             // Unknown identifier — assume it's a reference to another transpiled
             // type declared in the same compilation. The reachability scan
             // is what ultimately guarantees it ends up emitted.
