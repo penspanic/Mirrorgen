@@ -1548,6 +1548,7 @@ public static class TranspilerEngine
         var sb = new StringBuilder();
         sb.Append("((): ").Append(InferSwitchExpressionResultType(swx, ctx)).Append(" => { ");
         sb.Append("const _v = ").Append(governing).Append("; ");
+        bool hasCatchAll = false;
         foreach (var arm in swx.Arms)
         {
             // Type / var patterns bind a fresh name to the governing value;
@@ -1577,9 +1578,28 @@ public static class TranspilerEngine
                 var guard = EmitExpression(when.Condition, ctx);
                 cond = cond == "true" ? guard : $"({cond}) && ({guard})";
             }
+            if (arm.Expression is ThrowExpressionSyntax thrArm)
+            {
+                // `_ => throw ...` — emit as a direct throw statement so the
+                // emit avoids wrapping the throw in an IIFE that would make
+                // both the return and the trailing safety-net throw appear
+                // unreachable to TS's flow analysis.
+                var thrBody = EmitThrowExpressionBody(thrArm, ctx);
+                if (cond == "true")
+                {
+                    sb.Append(thrBody).Append(' ');
+                    hasCatchAll = true;
+                }
+                else
+                {
+                    sb.Append("if (").Append(cond).Append(") { ").Append(thrBody).Append(" } ");
+                }
+                continue;
+            }
             if (cond == "true")
             {
                 sb.Append("return ").Append(EmitExpression(arm.Expression, ctx)).Append("; ");
+                hasCatchAll = true;
             }
             else
             {
@@ -1589,8 +1609,14 @@ public static class TranspilerEngine
         }
         // Fall-through guard — C# would throw SwitchExpressionException at
         // runtime if no arm matched. Mirror that loudly so silent undefined
-        // values don't leak past the boundary.
-        sb.Append("throw new Error(\"switch expression: no arm matched\"); })()");
+        // values don't leak past the boundary. Skip when a catch-all arm
+        // already short-circuited control flow (the throw / return is
+        // unconditional, so TS would flag the guard as unreachable).
+        if (!hasCatchAll)
+        {
+            sb.Append("throw new Error(\"switch expression: no arm matched\"); ");
+        }
+        sb.Append("})()");
         return sb.ToString();
     }
 
@@ -1914,9 +1940,51 @@ public static class TranspilerEngine
                 return EmitInterpolatedString(interp, ctx);
             case TupleExpressionSyntax tupleExpr:
                 return EmitTupleExpression(tupleExpr, ctx);
+            case ThrowExpressionSyntax thrExpr:
+                {
+                    // `_ => throw new Foo(...)` inside a switch expression. JS
+                    // doesn't have a throw-expression form, so wrap in an IIFE
+                    // arrow that throws when evaluated. The runtime semantics
+                    // match — control flow never returns from the arm.
+                    var thrEmit = EmitThrowExpressionBody(thrExpr, ctx);
+                    return $"(() => {{ {thrEmit} }})()";
+                }
             default:
                 throw new NotSupportedException($"Unsupported expression: {expr.Kind()}");
         }
+    }
+
+    static string EmitThrowExpressionBody(ThrowExpressionSyntax thrExpr, EmitContext ctx)
+    {
+        if (thrExpr.Expression is not ObjectCreationExpressionSyntax oce)
+        {
+            throw new NotSupportedException("Bare `throw;` is not supported inside a throw-expression.");
+        }
+        var jsError = oce.Type switch
+        {
+            IdentifierNameSyntax i => MapExceptionType(i.Identifier.Text),
+            QualifiedNameSyntax q => MapExceptionType(q.Right.Identifier.Text),
+            _ => "Error",
+        };
+        string message = "\"\"";
+        if (oce.ArgumentList is { } args)
+        {
+            foreach (var a in args.Arguments)
+            {
+                if (a.Expression is InvocationExpressionSyntax ie &&
+                    ie.Expression is IdentifierNameSyntax id &&
+                    id.Identifier.Text == "nameof") continue;
+                var argType = ctx.TypeOf(a.Expression);
+                if (argType?.SpecialType == SpecialType.System_String ||
+                    a.Expression is InterpolatedStringExpressionSyntax ||
+                    (a.Expression is LiteralExpressionSyntax lit && lit.IsKind(SyntaxKind.StringLiteralExpression)))
+                {
+                    message = EmitExpression(a.Expression, ctx);
+                    break;
+                }
+            }
+        }
+        return $"throw new {jsError}({message});";
     }
 
     // Match `var (a, b, c) = expr;` (and the typed form `(int a, int b) = expr;`).
@@ -2440,6 +2508,18 @@ public static class TranspilerEngine
                 $"Method '{target.ContainingType?.Name}.{target.Name}' is not marked [Transpile]; calls outside the transpile boundary are not allowed.");
         }
 
+        // Extension methods reify the receiver as the first explicit arg:
+        // `face.Normal()` → `Normal(face)` (the C# `this CubeFace face`
+        // parameter becomes a plain positional argument on the TS side).
+        // The walker also strips the `this` modifier when emitting the
+        // method declaration itself (see EmitMethod).
+        if (target.IsExtensionMethod && inv.Expression is MemberAccessExpressionSyntax extAccess)
+        {
+            var receiver = EmitExpression(extAccess.Expression, ctx);
+            var allArgs = args.Length > 0 ? $"{receiver}, {args}" : receiver;
+            return $"{target.Name}({allArgs})";
+        }
+
         return $"{target.Name}({args})";
     }
 
@@ -2663,6 +2743,15 @@ public static class TranspilerEngine
 
     static bool IsTranspileMethodSymbol(IMethodSymbol method)
     {
+        // Extension methods used as `receiver.Method()` resolve via Roslyn
+        // to the *reduced* form, where ContainingType is the receiver's
+        // type (e.g. `CubeFace`) instead of the declaring static class
+        // (e.g. `CubeFaceExtensions`). Walk back through `ReducedFrom` so
+        // [Transpile] markers on the declaring class still apply.
+        if (method.ReducedFrom is { } original)
+        {
+            return IsTranspileMethodSymbol(original);
+        }
         foreach (var attr in method.GetAttributes())
         {
             if (attr.AttributeClass?.ToDisplayString() == "Mirrorgen.TranspileAttribute") return true;
