@@ -1,8 +1,9 @@
 # samples/minimal
 
-The smallest end-to-end Mirrorgen pipeline: three `[Transpile]` C# methods
-mirrored into TypeScript, with `[GenerateCrossTest]` proving the two sides
-stay byte-equivalent.
+The smallest end-to-end Mirrorgen pipeline: a `[Transpile]` record + enum
+and three `[Transpile]` methods mirrored into TypeScript, with
+`[GenerateCrossTest]` on the methods proving the two sides stay
+byte-equivalent.
 
 ## Layout
 
@@ -33,9 +34,11 @@ outputs into `rules.fixtures.json`, then runs `vitest`. A clean run prints
 
 ## What this sample doesn't yet show
 
-- **Type emit.** `Pricing.cs` is intentionally methods-only because the
-  walker doesn't mirror records / enums / classes yet. Once that lands the
-  sample will pick up a `record OrderLine(...)` and a `enum DiscountKind`.
+- **Cross-validation for record-typed methods.** `[GenerateCrossTest]` only
+  samples primitive + string arguments today, so the OrderLine record and
+  DiscountKind enum are emitted as types but aren't fed into the fixture
+  loop. The three primitive-arg methods (`ClampQuantity`, `Total`,
+  `ApplyDiscount`) still get their full 16-sample cross-tests.
 - **MSBuild integration.** Today regeneration is driven by `regen.sh` and
   the CLI. Once the `.targets` package ships, a `dotnet build` on the
   `Rules.csproj` will do the same work automatically and `regen.sh` will

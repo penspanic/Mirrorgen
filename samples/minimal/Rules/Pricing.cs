@@ -2,6 +2,17 @@ using Mirrorgen;
 
 namespace Mirrorgen.Samples.Minimal;
 
+[Transpile]
+public enum DiscountKind
+{
+    None,
+    Flat,
+    Percent,
+}
+
+[Transpile]
+public record OrderLine(int Quantity, int UnitPrice, DiscountKind Kind, int DiscountValue);
+
 // Three [Transpile] methods that survive the v0.1 walker subset:
 //   - locals + arithmetic with int32 wrap
 //   - control flow with ternary

@@ -22,16 +22,142 @@ public static class TranspilerEngine
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
         var ctx = new EmitContext(compilation.GetSemanticModel(tree));
 
+        // Index every type/method declaration in the tree so the reachability
+        // scan can resolve identifier references back to their declaration.
+        var typeByName = new Dictionary<string, SyntaxNode>(StringComparer.Ordinal);
+        var methods = new List<MethodDeclarationSyntax>();
+        foreach (var node in tree.GetCompilationUnitRoot().DescendantNodes())
+        {
+            switch (node)
+            {
+                case EnumDeclarationSyntax e: typeByName[e.Identifier.Text] = e; break;
+                case RecordDeclarationSyntax r: typeByName[r.Identifier.Text] = r; break;
+                case ClassDeclarationSyntax c: typeByName[c.Identifier.Text] = c; break;
+                case StructDeclarationSyntax s: typeByName[s.Identifier.Text] = s; break;
+                case MethodDeclarationSyntax m: methods.Add(m); break;
+            }
+        }
+
+        // BFS reachability from every explicit [Transpile] entry point.
+        var emit = new HashSet<SyntaxNode>();
+        var queue = new Queue<SyntaxNode>();
+        foreach (var node in typeByName.Values)
+        {
+            var attrs = TypeAttributeLists(node);
+            if (HasTranspileAttribute(attrs))
+            {
+                if (emit.Add(node)) queue.Enqueue(node);
+            }
+        }
+        foreach (var m in methods)
+        {
+            if (HasTranspileAttribute(m.AttributeLists))
+            {
+                if (emit.Add(m)) queue.Enqueue(m);
+            }
+        }
+        while (queue.Count > 0)
+        {
+            var n = queue.Dequeue();
+            foreach (var refName in ExtractReferencedTypeNames(n))
+            {
+                if (typeByName.TryGetValue(refName, out var refNode) && emit.Add(refNode))
+                {
+                    queue.Enqueue(refNode);
+                }
+            }
+        }
+
+        // Emit in declaration order so output is stable across runs.
         var sb = new StringBuilder();
         bool first = true;
-        foreach (var method in tree.GetCompilationUnitRoot().DescendantNodes().OfType<MethodDeclarationSyntax>())
+        foreach (var member in tree.GetCompilationUnitRoot().DescendantNodes())
         {
-            if (!HasTranspileAttribute(method)) continue;
+            if (!emit.Contains(member)) continue;
+            string? emitted = member switch
+            {
+                EnumDeclarationSyntax enumDecl => EmitEnum(enumDecl),
+                RecordDeclarationSyntax rec => EmitTypeDeclaration(rec, ctx),
+                ClassDeclarationSyntax cls => EmitTypeDeclaration(cls, ctx),
+                StructDeclarationSyntax str => EmitTypeDeclaration(str, ctx),
+                MethodDeclarationSyntax method => EmitMethod(method, ctx),
+                _ => null,
+            };
+            if (emitted is null) continue;
             if (!first) sb.AppendLine();
-            sb.Append(EmitMethod(method, ctx));
+            sb.Append(emitted);
             first = false;
         }
         return sb.ToString();
+    }
+
+    static SyntaxList<AttributeListSyntax> TypeAttributeLists(SyntaxNode node) => node switch
+    {
+        EnumDeclarationSyntax e => e.AttributeLists,
+        BaseTypeDeclarationSyntax bt => bt.AttributeLists,
+        _ => default,
+    };
+
+    static IEnumerable<string> ExtractReferencedTypeNames(SyntaxNode node)
+    {
+        switch (node)
+        {
+            case MethodDeclarationSyntax m:
+                foreach (var p in m.ParameterList.Parameters)
+                {
+                    if (p.Type is { } pt) foreach (var n in NamesIn(pt)) yield return n;
+                }
+                foreach (var n in NamesIn(m.ReturnType)) yield return n;
+                yield break;
+            case RecordDeclarationSyntax r:
+                if (r.ParameterList is { } pl)
+                {
+                    foreach (var p in pl.Parameters)
+                    {
+                        if (p.Type is { } pt) foreach (var n in NamesIn(pt)) yield return n;
+                    }
+                }
+                foreach (var n in NamesInTypeBody(r)) yield return n;
+                yield break;
+            case ClassDeclarationSyntax c:
+                foreach (var n in NamesInTypeBody(c)) yield return n;
+                yield break;
+            case StructDeclarationSyntax s:
+                foreach (var n in NamesInTypeBody(s)) yield return n;
+                yield break;
+        }
+    }
+
+    static IEnumerable<string> NamesInTypeBody(TypeDeclarationSyntax decl)
+    {
+        foreach (var m in decl.Members)
+        {
+            switch (m)
+            {
+                case PropertyDeclarationSyntax prop:
+                    foreach (var n in NamesIn(prop.Type)) yield return n;
+                    break;
+                case FieldDeclarationSyntax field:
+                    foreach (var n in NamesIn(field.Declaration.Type)) yield return n;
+                    break;
+            }
+        }
+    }
+
+    static IEnumerable<string> NamesIn(TypeSyntax type)
+    {
+        switch (type)
+        {
+            case ArrayTypeSyntax arr:
+                foreach (var n in NamesIn(arr.ElementType)) yield return n;
+                yield break;
+            case NullableTypeSyntax nt:
+                foreach (var n in NamesIn(nt.ElementType)) yield return n;
+                yield break;
+            case IdentifierNameSyntax id:
+                yield return id.Identifier.Text;
+                yield break;
+        }
     }
 
     sealed class EmitContext
@@ -80,7 +206,7 @@ public static class TranspilerEngine
 
     static string EmitMethod(MethodDeclarationSyntax method, EmitContext ctx)
     {
-        var name = ReadEmitName(method) ?? method.Identifier.Text;
+        var name = ReadEmitName(method.AttributeLists) ?? method.Identifier.Text;
         var returnType = MapType(method.ReturnType);
         var parameters = string.Join(
             ", ",
@@ -96,9 +222,9 @@ public static class TranspilerEngine
         return sb.ToString();
     }
 
-    static bool HasTranspileAttribute(MethodDeclarationSyntax method)
+    static bool HasTranspileAttribute(SyntaxList<AttributeListSyntax> attributeLists)
     {
-        foreach (var list in method.AttributeLists)
+        foreach (var list in attributeLists)
         {
             foreach (var attr in list.Attributes)
             {
@@ -116,9 +242,9 @@ public static class TranspilerEngine
                n.EndsWith(".TranspileAttribute", StringComparison.Ordinal);
     }
 
-    static string? ReadEmitName(MethodDeclarationSyntax method)
+    static string? ReadEmitName(SyntaxList<AttributeListSyntax> attributeLists)
     {
-        foreach (var list in method.AttributeLists)
+        foreach (var list in attributeLists)
         {
             foreach (var attr in list.Attributes)
             {
@@ -140,11 +266,120 @@ public static class TranspilerEngine
         return null;
     }
 
+    static string EmitEnum(EnumDeclarationSyntax decl)
+    {
+        var name = ReadEmitName(decl.AttributeLists) ?? decl.Identifier.Text;
+        var sb = new StringBuilder();
+        sb.Append("export enum ").Append(name).AppendLine(" {");
+
+        long implicitValue = 0;
+        foreach (var member in decl.Members)
+        {
+            long value;
+            if (member.EqualsValue?.Value is { } expr)
+            {
+                if (!TryEvaluateConstantInt(expr, out value))
+                {
+                    throw new NotSupportedException(
+                        $"Enum member '{decl.Identifier.Text}.{member.Identifier.Text}' has a non-constant value.");
+                }
+                implicitValue = value + 1;
+            }
+            else
+            {
+                value = implicitValue++;
+            }
+            sb.Append(BodyIndent).Append(member.Identifier.Text).Append(" = ")
+              .Append(value.ToString(CultureInfo.InvariantCulture)).AppendLine(",");
+        }
+
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
+    static string EmitTypeDeclaration(TypeDeclarationSyntax decl, EmitContext ctx)
+    {
+        var name = ReadEmitName(decl.AttributeLists) ?? decl.Identifier.Text;
+        var sb = new StringBuilder();
+        sb.Append("export interface ").Append(name).AppendLine(" {");
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        // Positional record parameters become the primary interface members.
+        if (decl is RecordDeclarationSyntax rec && rec.ParameterList is { } parameters)
+        {
+            foreach (var p in parameters.Parameters)
+            {
+                if (p.Type is null)
+                {
+                    throw new NotSupportedException(
+                        $"Record positional parameter '{p.Identifier.Text}' has no type.");
+                }
+                var member = p.Identifier.Text;
+                if (!seen.Add(member)) continue;
+                sb.Append(BodyIndent).Append(member).Append(": ").Append(MapType(p.Type)).AppendLine(";");
+            }
+        }
+
+        // Properties + fields declared in the body.
+        foreach (var bodyMember in decl.Members)
+        {
+            switch (bodyMember)
+            {
+                case PropertyDeclarationSyntax prop:
+                    {
+                        var member = prop.Identifier.Text;
+                        if (!seen.Add(member)) continue;
+                        sb.Append(BodyIndent).Append(member).Append(": ").Append(MapType(prop.Type)).AppendLine(";");
+                        break;
+                    }
+                case FieldDeclarationSyntax field:
+                    foreach (var variable in field.Declaration.Variables)
+                    {
+                        var member = variable.Identifier.Text;
+                        if (!seen.Add(member)) continue;
+                        sb.Append(BodyIndent).Append(member).Append(": ").Append(MapType(field.Declaration.Type)).AppendLine(";");
+                    }
+                    break;
+                // Methods / constructors / etc. on a [Transpile] type aren't part of
+                // the v0.1 surface — silently skip rather than throw so consumers can
+                // freely add server-side helpers next to the data shape.
+            }
+        }
+
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
+    static bool TryEvaluateConstantInt(ExpressionSyntax expr, out long value)
+    {
+        switch (expr)
+        {
+            case LiteralExpressionSyntax lit when lit.Token.Value is int i:
+                value = i;
+                return true;
+            case LiteralExpressionSyntax lit when lit.Token.Value is long l:
+                value = l;
+                return true;
+            case PrefixUnaryExpressionSyntax { Operand: var inner } u when u.IsKind(SyntaxKind.UnaryMinusExpression):
+                if (TryEvaluateConstantInt(inner, out var v)) { value = -v; return true; }
+                break;
+            case PrefixUnaryExpressionSyntax { Operand: var inner } u when u.IsKind(SyntaxKind.UnaryPlusExpression):
+                return TryEvaluateConstantInt(inner, out value);
+        }
+        value = 0;
+        return false;
+    }
+
     static string MapType(TypeSyntax type)
     {
         if (type is ArrayTypeSyntax arr)
         {
             return $"{MapType(arr.ElementType)}[]";
+        }
+        if (type is NullableTypeSyntax nt)
+        {
+            return $"{MapType(nt.ElementType)} | null";
         }
         var s = type.ToString();
         return s switch
@@ -155,7 +390,12 @@ public static class TranspilerEngine
             "bool" => "boolean",
             "string" => "string",
             "void" => "void",
-            _ => throw new NotSupportedException($"Unsupported type: {s}"),
+            "decimal" or "char" or "object" or "dynamic"
+                => throw new NotSupportedException($"Unsupported primitive type: {s}"),
+            // Unknown identifier — assume it's a reference to another transpiled
+            // type declared in the same compilation. The reachability scan
+            // is what ultimately guarantees it ends up emitted.
+            _ => s,
         };
     }
 
@@ -164,6 +404,15 @@ public static class TranspilerEngine
         if (type is IArrayTypeSymbol arr)
         {
             return $"{MapTypeSymbol(arr.ElementType)}[]";
+        }
+        if (type.NullableAnnotation == NullableAnnotation.Annotated && type.IsReferenceType)
+        {
+            return $"{MapTypeSymbol(type.WithNullableAnnotation(NullableAnnotation.NotAnnotated))} | null";
+        }
+        if (type.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T &&
+            type is INamedTypeSymbol nullable && nullable.TypeArguments.Length == 1)
+        {
+            return $"{MapTypeSymbol(nullable.TypeArguments[0])} | null";
         }
         return type.SpecialType switch
         {
@@ -174,7 +423,8 @@ public static class TranspilerEngine
             SpecialType.System_Boolean => "boolean",
             SpecialType.System_String => "string",
             SpecialType.System_Void => "void",
-            _ => throw new NotSupportedException($"Unsupported type: {type.ToDisplayString()}"),
+            // Same fallback as MapType: assume reference to another transpiled type.
+            _ => type.Name,
         };
     }
 
@@ -383,6 +633,8 @@ public static class TranspilerEngine
                 return $"{EmitExpression(assign.Left, ctx)} {MapAssignmentOperator(assign.OperatorToken)} {EmitExpression(assign.Right, ctx)}";
             case InvocationExpressionSyntax inv:
                 return EmitInvocation(inv, ctx);
+            case MemberAccessExpressionSyntax member when member.IsKind(SyntaxKind.SimpleMemberAccessExpression):
+                return $"{EmitExpression(member.Expression, ctx)}.{member.Name.Identifier.Text}";
             default:
                 throw new NotSupportedException($"Unsupported expression: {expr.Kind()}");
         }
@@ -523,6 +775,8 @@ public static class TranspilerEngine
                 return "true";
             case SyntaxKind.FalseKeyword:
                 return "false";
+            case SyntaxKind.NullKeyword:
+                return "null";
             default:
                 throw new NotSupportedException($"Unsupported literal: {lit.Token.Kind()}");
         }
