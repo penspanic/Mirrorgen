@@ -178,6 +178,20 @@ public static class Subject
         return xs.Count;
     }
 
+    // BigInt arithmetic — random long across the full 64-bit range,
+    // BigInt.asIntN(64, ...) wrap on both sides so int.MaxValue * 2 etc.
+    // round-trip identically.
+    [Transpile, GenerateCrossTest(Samples = 12, Seed = 33)]
+    [CrossTestCase(long.MinValue, 1L)]
+    [CrossTestCase(long.MaxValue, 1L)]
+    [CrossTestCase(0L, 0L)]
+    public static long WrapAddLong(long a, long b) => a + b;
+
+    [Transpile, GenerateCrossTest(Samples = 12, Seed = 34)]
+    [CrossTestCase(long.MaxValue, 2L)]
+    [CrossTestCase(long.MinValue, -1L)]
+    public static long WrapMulLong(long a, long b) => a * b;
+
     // do-while with break.
     [Transpile, GenerateCrossTest(Samples = 10, Seed = 29)]
     public static int FirstNonNegativeStep(int n)

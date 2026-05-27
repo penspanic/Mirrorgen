@@ -139,13 +139,33 @@ public static class FixtureGenerator
 
     public static string SerializeToJson(IReadOnlyList<FixtureRecord> fixtures, TypeMappingRegistry registry)
     {
-        if (registry.Count == 0)
-        {
-            return JsonSerializer.Serialize(fixtures, JsonOptions);
-        }
         var opts = new JsonSerializerOptions(JsonOptions);
-        opts.Converters.Add(new WrappedPrimitiveConverter(registry));
+        // 64-bit integers always serialise as `"__bigint:<value>"` strings
+        // so JS can round-trip them via BigInt(...) without losing precision
+        // above 2^53. The TS test harness recognises the prefix.
+        opts.Converters.Add(new Int64StringConverter());
+        opts.Converters.Add(new UInt64StringConverter());
+        if (registry.Count > 0)
+        {
+            opts.Converters.Add(new WrappedPrimitiveConverter(registry));
+        }
         return JsonSerializer.Serialize(fixtures, opts);
+    }
+
+    sealed class Int64StringConverter : JsonConverter<long>
+    {
+        public override long Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            => throw new NotSupportedException("Int64StringConverter is write-only.");
+        public override void Write(Utf8JsonWriter writer, long value, JsonSerializerOptions options)
+            => writer.WriteStringValue("__bigint:" + value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
+
+    sealed class UInt64StringConverter : JsonConverter<ulong>
+    {
+        public override ulong Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            => throw new NotSupportedException("UInt64StringConverter is write-only.");
+        public override void Write(Utf8JsonWriter writer, ulong value, JsonSerializerOptions options)
+            => writer.WriteStringValue("__bigint:" + value.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     /// <summary>
@@ -234,12 +254,25 @@ public static class FixtureGenerator
         // with `| 0` / Math.imul so overflow stays wire-equivalent between C# unchecked
         // and JS. long / other widths stay narrow until they get the same treatment.
         if (t == typeof(int)) return rng.Next(int.MinValue, int.MaxValue);
-        if (t == typeof(long)) return (long)rng.Next(-100_000, 100_001);
+        // Sample long across the full 64-bit range. Two 32-bit halves stitched
+        // together; the JSON converter emits a `__bigint:<value>` string so
+        // values above 2^53 survive the JS round-trip intact.
+        if (t == typeof(long))
+        {
+            ulong raw = ((ulong)(uint)rng.Next(int.MinValue, int.MaxValue) << 32)
+                      | (uint)rng.Next(int.MinValue, int.MaxValue);
+            return unchecked((long)raw);
+        }
+        if (t == typeof(ulong))
+        {
+            ulong raw = ((ulong)(uint)rng.Next(int.MinValue, int.MaxValue) << 32)
+                      | (uint)rng.Next(int.MinValue, int.MaxValue);
+            return raw;
+        }
         if (t == typeof(short)) return (short)rng.Next(short.MinValue, short.MaxValue + 1);
         if (t == typeof(byte)) return (byte)rng.Next(0, 256);
         if (t == typeof(sbyte)) return (sbyte)rng.Next(sbyte.MinValue, sbyte.MaxValue + 1);
         if (t == typeof(uint)) return (uint)rng.Next(0, 10_001);
-        if (t == typeof(ulong)) return (ulong)rng.Next(0, 100_001);
         if (t == typeof(ushort)) return (ushort)rng.Next(0, ushort.MaxValue + 1);
         if (t == typeof(bool)) return rng.Next(2) == 0;
         if (t == typeof(float)) return (float)(rng.NextDouble() * 200.0 - 100.0);

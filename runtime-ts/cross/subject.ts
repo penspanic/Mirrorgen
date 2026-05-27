@@ -152,6 +152,14 @@ export function BuildListAndCount(n: number): number {
   return xs.length;
 }
 
+export function WrapAddLong(a: bigint, b: bigint): bigint {
+  return BigInt.asIntN(64, a + b);
+}
+
+export function WrapMulLong(a: bigint, b: bigint): bigint {
+  return BigInt.asIntN(64, a * b);
+}
+
 export function FirstNonNegativeStep(n: number): number {
   let i: number = n;
   if (i < -50) {
