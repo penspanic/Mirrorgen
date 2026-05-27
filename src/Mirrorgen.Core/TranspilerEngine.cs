@@ -1198,6 +1198,10 @@ public static class TranspilerEngine
         {
             return mapping.TsTypeName;
         }
+        // System.Numerics value types use inline structural emit (no nominal
+        // TS interface exists for them in the generated file).
+        var numerics = MapNumericsType(type.ToDisplayString());
+        if (numerics is not null) return numerics;
         return type.SpecialType switch
         {
             SpecialType.System_Int32 or SpecialType.System_Int16
