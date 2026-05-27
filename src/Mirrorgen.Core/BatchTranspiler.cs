@@ -93,8 +93,13 @@ public static class BatchTranspiler
     // deduping top-level exports by name and merging helper-function
     // definitions (which Mirrorgen otherwise prepends to every tree that
     // references them) into a single occurrence at the top.
+    // Top-level declarations to keep in the aggregated file. The optional
+    // `export` makes module-local `const X = …;` (emitted for non-public
+    // C# consts that body expressions still reference) survive the dedupe
+    // pass. Without this they get silently dropped and the referencing TS
+    // function ends up with an undefined-identifier error.
     static readonly Regex TopLevelExportRegex = new(
-        @"^export\s+(?:const|enum|function|interface)\s+(\w+)\b",
+        @"^(?:export\s+)?(?:const|enum|function|interface|class)\s+(\w+)\b",
         RegexOptions.Compiled);
     static readonly Regex HelperFunctionRegex = new(
         @"^function\s+(__mirrorgen_\w+)\b",

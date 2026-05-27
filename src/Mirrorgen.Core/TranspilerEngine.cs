@@ -1685,6 +1685,16 @@ public static class TranspilerEngine
 
     static string InferSwitchExpressionResultType(SwitchExpressionSyntax swx, EmitContext ctx)
     {
+        // Use ConvertedType when the switch's inferred type is an unnamed
+        // tuple but the surrounding context (e.g. a named return tuple)
+        // gives it names — otherwise the IIFE return annotation emits as
+        // `[T, T]` while the outer function's return type is `{ U: T; V: T }`,
+        // failing TS's tuple/object compatibility check.
+        var converted = ctx.ConvertedTypeOf(swx);
+        if (converted is INamedTypeSymbol convNamed && convNamed.IsTupleType)
+        {
+            return MapTypeSymbol(convNamed, ctx);
+        }
         var type = ctx.TypeOf(swx);
         return type is null ? "unknown" : MapTypeSymbol(type, ctx);
     }
@@ -2245,6 +2255,19 @@ public static class TranspilerEngine
         // what we want for return-position emit.
         var converted = ctx.ConvertedTypeOf(tupleExpr) as INamedTypeSymbol;
         var args = tupleExpr.Arguments;
+        // Roslyn doesn't always propagate tuple element names from a named
+        // method return tuple down through switch-expression arms (each
+        // arm's tuple literal keeps its own positional inference). When the
+        // enclosing switch has a named converted type matching the arm's
+        // arity, push those names down so the emit stays object-shaped.
+        if ((converted is not { IsTupleType: true } || !HasNamedTupleElements(converted, args.Count))
+            && tupleExpr.FirstAncestorOrSelf<SwitchExpressionSyntax>() is { } swxAncestor
+            && ctx.ConvertedTypeOf(swxAncestor) is INamedTypeSymbol swxConverted
+            && swxConverted.IsTupleType
+            && HasNamedTupleElements(swxConverted, args.Count))
+        {
+            converted = swxConverted;
+        }
         var fields = new List<string>(args.Count);
         bool anyNamed = false;
 
