@@ -13,9 +13,15 @@ public static class TranspilerEngine
     public const string Version = "0.0.1-alpha";
 
     public static string TranspileSource(string csharpSource)
-        => TranspileSource(csharpSource, TypeMappingRegistry.Empty);
+        => TranspileSource(csharpSource, TypeMappingRegistry.Empty, TranspileOptions.Default);
 
     public static string TranspileSource(string csharpSource, TypeMappingRegistry registry)
+        => TranspileSource(csharpSource, registry, TranspileOptions.Default);
+
+    public static string TranspileSource(string csharpSource, TranspileOptions options)
+        => TranspileSource(csharpSource, TypeMappingRegistry.Empty, options);
+
+    public static string TranspileSource(string csharpSource, TypeMappingRegistry registry, TranspileOptions options)
     {
         var tree = CSharpSyntaxTree.ParseText(csharpSource);
         var compilation = CSharpCompilation.Create(
@@ -23,7 +29,7 @@ public static class TranspilerEngine
             syntaxTrees: new[] { tree },
             references: TrustedReferences.Value,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-        return TranspileTree(tree, compilation, registry);
+        return TranspileTree(tree, compilation, registry, options);
     }
 
     /// <summary>
@@ -35,6 +41,9 @@ public static class TranspilerEngine
     /// emit, with no separate import step needed.
     /// </summary>
     public static string TranspileTree(SyntaxTree tree, CSharpCompilation compilation, TypeMappingRegistry registry)
+        => TranspileTree(tree, compilation, registry, TranspileOptions.Default);
+
+    public static string TranspileTree(SyntaxTree tree, CSharpCompilation compilation, TypeMappingRegistry registry, TranspileOptions options)
     {
         var ctx = new EmitContext(compilation.GetSemanticModel(tree), registry);
 
@@ -202,7 +211,17 @@ public static class TranspilerEngine
                 first = false;
             }
         }
-        return PrependHelpers(ctx, sb.ToString());
+
+        var body = sb.ToString();
+        if (options.EmitValidators)
+        {
+            var validators = EmitValidatorsForTypesOutput(body);
+            if (validators.Length > 0)
+            {
+                body = body.TrimEnd() + Environment.NewLine + Environment.NewLine + validators;
+            }
+        }
+        return PrependHelpers(ctx, body);
     }
 
     // Helper functions emitted lazily at the top of any .ts file that
@@ -657,6 +676,124 @@ public static class TranspilerEngine
         }
         literal = string.Empty;
         return false;
+    }
+
+    // Validator emission — analyses the emitted types output (interfaces + enums)
+    // and produces `parseX(value: unknown): X` functions that throw TypeError on
+    // shape mismatch. Used when TranspileOptions.EmitValidators is set; gives
+    // consumers a runtime gate at the C# ↔ TS boundary.
+    static readonly System.Text.RegularExpressions.Regex InterfaceBlockRegex =
+        new(@"export interface (\w+) \{([^}]*)\}", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    static readonly System.Text.RegularExpressions.Regex EnumDeclRegex =
+        new(@"export enum (\w+) \{", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    static readonly System.Text.RegularExpressions.Regex InterfaceMemberRegex =
+        new(@"^\s*(\w+)(\??):\s*(.+?);\s*$",
+            System.Text.RegularExpressions.RegexOptions.Compiled | System.Text.RegularExpressions.RegexOptions.Multiline);
+
+    static string EmitValidatorsForTypesOutput(string typesOutput)
+    {
+        var interfaces = new List<(string Name, List<(string Field, bool Optional, string Type)> Members)>();
+        var enumNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (System.Text.RegularExpressions.Match m in EnumDeclRegex.Matches(typesOutput))
+        {
+            enumNames.Add(m.Groups[1].Value);
+        }
+        foreach (System.Text.RegularExpressions.Match m in InterfaceBlockRegex.Matches(typesOutput))
+        {
+            var name = m.Groups[1].Value;
+            var body = m.Groups[2].Value;
+            var props = new List<(string, bool, string)>();
+            foreach (System.Text.RegularExpressions.Match pm in InterfaceMemberRegex.Matches(body))
+            {
+                props.Add((pm.Groups[1].Value, pm.Groups[2].Value == "?", pm.Groups[3].Value.Trim()));
+            }
+            interfaces.Add((name, props));
+        }
+        if (interfaces.Count == 0) return string.Empty;
+
+        var interfaceNames = new HashSet<string>(interfaces.Select(i => i.Name), StringComparer.Ordinal);
+        var sb = new StringBuilder();
+        foreach (var (name, props) in interfaces)
+        {
+            sb.Append("export function parse").Append(name).Append("(value: unknown): ").Append(name).AppendLine(" {");
+            sb.Append(BodyIndent).AppendLine("if (typeof value !== 'object' || value === null) {");
+            sb.Append(BodyIndent).Append(BodyIndent).Append("throw new TypeError(`").Append(name).AppendLine(": expected object, got ${typeof value}`);");
+            sb.Append(BodyIndent).AppendLine("}");
+            sb.Append(BodyIndent).AppendLine("const o = value as Record<string, unknown>;");
+            foreach (var (field, optional, type) in props)
+            {
+                EmitValidatorFieldCheck(sb, name, field, optional, type, interfaceNames, enumNames);
+            }
+            sb.Append(BodyIndent).Append("return o as unknown as ").Append(name).AppendLine(";");
+            sb.AppendLine("}");
+            sb.AppendLine();
+        }
+        return sb.ToString().TrimEnd() + Environment.NewLine;
+    }
+
+    static void EmitValidatorFieldCheck(StringBuilder sb, string ifaceName, string field, bool optional, string type, HashSet<string> interfaceNames, HashSet<string> enumNames)
+    {
+        var path = $"{ifaceName}.{field}";
+        var access = $"o[\"{field}\"]";
+        sb.Append(BodyIndent).AppendLine("{");
+        sb.Append(BodyIndent).Append(BodyIndent).Append("const x = ").Append(access).AppendLine(";");
+        // Strip " | null" — we filter null/undefined explicitly when the field
+        // is nullable / optional.
+        var inner = type.EndsWith(" | null") ? type[..^" | null".Length] : type;
+        var nullableOrOptional = optional || type.EndsWith(" | null");
+        if (nullableOrOptional)
+        {
+            sb.Append(BodyIndent).Append(BodyIndent).AppendLine("if (x !== null && x !== undefined) {");
+            EmitValidatorTypeCheck(sb, path, "x", inner, interfaceNames, enumNames, "      ");
+            sb.Append(BodyIndent).Append(BodyIndent).AppendLine("}");
+        }
+        else
+        {
+            sb.Append(BodyIndent).Append(BodyIndent).Append("if (x === undefined) throw new TypeError(`").Append(path).AppendLine(": required`);");
+            EmitValidatorTypeCheck(sb, path, "x", inner, interfaceNames, enumNames, "    ");
+        }
+        sb.Append(BodyIndent).AppendLine("}");
+    }
+
+    static void EmitValidatorTypeCheck(StringBuilder sb, string path, string expr, string type, HashSet<string> interfaceNames, HashSet<string> enumNames, string indent)
+    {
+        if (type.EndsWith("[]"))
+        {
+            sb.Append(indent).Append("if (!Array.isArray(").Append(expr).Append(")) throw new TypeError(`").Append(path).Append(": expected array, got ${typeof ").Append(expr).AppendLine("}`);");
+            return;
+        }
+        if (type.StartsWith("Record<"))
+        {
+            sb.Append(indent).Append("if (typeof ").Append(expr).Append(" !== 'object' || ").Append(expr).Append(" === null) throw new TypeError(`").Append(path).Append(": expected object, got ${typeof ").Append(expr).AppendLine("}`);");
+            return;
+        }
+        switch (type)
+        {
+            case "string":
+            case "number":
+            case "boolean":
+                sb.Append(indent).Append("if (typeof ").Append(expr).Append(" !== '").Append(type).Append("') throw new TypeError(`").Append(path).Append(": expected ").Append(type).Append(", got ${typeof ").Append(expr).AppendLine("}`);");
+                return;
+            case "bigint":
+                sb.Append(indent).Append("if (typeof ").Append(expr).Append(" !== 'bigint') throw new TypeError(`").Append(path).Append(": expected bigint, got ${typeof ").Append(expr).AppendLine("}`);");
+                return;
+            case "unknown":
+                return;
+        }
+        if (enumNames.Contains(type))
+        {
+            sb.Append(indent).Append("if (typeof ").Append(expr).Append(" !== 'number' && typeof ").Append(expr).Append(" !== 'string') throw new TypeError(`").Append(path).Append(": expected number or string (").Append(type).Append("), got ${typeof ").Append(expr).AppendLine("}`);");
+            return;
+        }
+        if (interfaceNames.Contains(type))
+        {
+            sb.Append(indent).Append("parse").Append(type).Append("(").Append(expr).AppendLine(");");
+            return;
+        }
+        // Unknown leaf — best-effort object check.
+        sb.Append(indent).Append("if (typeof ").Append(expr).Append(" !== 'object' || ").Append(expr).Append(" === null) throw new TypeError(`").Append(path).Append(": expected object (").Append(type).Append("), got ${typeof ").Append(expr).AppendLine("}`);");
     }
 
     static string EscapeStringLiteral(string s)
