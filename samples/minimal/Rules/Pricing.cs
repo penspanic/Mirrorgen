@@ -46,7 +46,13 @@ public static class LineMath
 // fixture and the TS test in client/test verifies byte-equivalence with C#.
 public static class Pricing
 {
-    [Transpile, GenerateCrossTest(Samples = 16, Seed = 1)]
+    [Transpile]
+    [GenerateCrossTest(Samples = 16, Seed = 1)]
+    // Explicit corner cases run before the random samples so the JSON's
+    // first rows are the ones a human can sanity-check immediately.
+    [CrossTestCase(int.MinValue, 100)]
+    [CrossTestCase(int.MaxValue, 100)]
+    [CrossTestCase(0, 0)]
     public static int ClampQuantity(int requested, int max)
     {
         if (requested < 0) return 0;

@@ -17,6 +17,7 @@ public static class FixtureGenerator
 {
     const string TranspileAttributeName = "Mirrorgen.TranspileAttribute";
     const string GenerateCrossTestAttributeName = "Mirrorgen.GenerateCrossTestAttribute";
+    const string CrossTestCaseAttributeName = "Mirrorgen.CrossTestCaseAttribute";
 
     static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -62,6 +63,7 @@ public static class FixtureGenerator
 
         var parameters = method.GetParameters();
         var (samples, seed) = ReadCrossTestSettings(method);
+        var explicitCases = ReadExplicitCases(method, parameters);
 
         if (parameters.Length == 0)
         {
@@ -69,25 +71,67 @@ public static class FixtureGenerator
             return new FixtureRecord(method.Name, new[] { new FixtureCall(Array.Empty<object?>(), expected) });
         }
 
-        if (samples <= 0)
+        if (samples <= 0 && explicitCases.Count == 0)
         {
             throw new NotSupportedException(
-                $"Method '{method.Name}' has parameters but [GenerateCrossTest] does not specify Samples; set Samples to enable random argument generation.");
+                $"Method '{method.Name}' has parameters but [GenerateCrossTest] specifies no Samples and no [CrossTestCase] rows; set one or the other to produce fixture rows.");
         }
 
-        var rng = new Random(seed);
-        var calls = new List<FixtureCall>(samples);
-        for (int i = 0; i < samples; i++)
+        var calls = new List<FixtureCall>(samples + explicitCases.Count);
+
+        // Explicit cases run first so corner inputs appear at the top of the
+        // emitted JSON — readers scanning a failing test can see them
+        // immediately.
+        foreach (var caseArgs in explicitCases)
         {
-            var args = new object?[parameters.Length];
-            for (int p = 0; p < parameters.Length; p++)
+            var expected = method.Invoke(null, caseArgs);
+            calls.Add(new FixtureCall(caseArgs, expected));
+        }
+
+        if (samples > 0)
+        {
+            var rng = new Random(seed);
+            for (int i = 0; i < samples; i++)
             {
-                args[p] = GenerateArg(parameters[p].ParameterType, parameters[p].Name ?? $"p{p}", method.Name, rng, registry);
+                var args = new object?[parameters.Length];
+                for (int p = 0; p < parameters.Length; p++)
+                {
+                    args[p] = GenerateArg(parameters[p].ParameterType, parameters[p].Name ?? $"p{p}", method.Name, rng, registry);
+                }
+                var expected = method.Invoke(null, args);
+                calls.Add(new FixtureCall(args, expected));
             }
-            var expected = method.Invoke(null, args);
-            calls.Add(new FixtureCall(args, expected));
         }
         return new FixtureRecord(method.Name, calls);
+    }
+
+    static List<object?[]> ReadExplicitCases(MethodInfo method, ParameterInfo[] parameters)
+    {
+        var cases = new List<object?[]>();
+        foreach (var attr in method.GetCustomAttributesData())
+        {
+            if (attr.AttributeType.FullName != CrossTestCaseAttributeName) continue;
+            if (attr.ConstructorArguments.Count != 1) continue;
+
+            // params object[] arrives as a CustomAttributeTypedArgument whose
+            // Value is itself a ReadOnlyCollection<CustomAttributeTypedArgument>.
+            if (attr.ConstructorArguments[0].Value is
+                System.Collections.ObjectModel.ReadOnlyCollection<CustomAttributeTypedArgument> rawArgs)
+            {
+                if (rawArgs.Count != parameters.Length)
+                {
+                    throw new NotSupportedException(
+                        $"Method '{method.Name}' has {parameters.Length} parameter(s) but a [CrossTestCase] supplied {rawArgs.Count} argument(s).");
+                }
+                var args = new object?[rawArgs.Count];
+                for (int i = 0; i < rawArgs.Count; i++)
+                {
+                    args[i] = rawArgs[i].Value;
+                }
+                cases.Add(args);
+            }
+        }
+        return cases;
     }
 
     public static string SerializeToJson(IReadOnlyList<FixtureRecord> fixtures)

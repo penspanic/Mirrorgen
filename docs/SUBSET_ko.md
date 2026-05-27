@@ -69,3 +69,8 @@ v0.1 에 지원 안 함:
 | MG0006  | Error    | `[Transpile]` 메서드를 가진 class 가 `object` 외의 base 상속                              |
 
 `MG0001`..`MG0099` 범위의 diagnostic id 는 stable. `#pragma warning disable` 로 suppress 가능하지만 권장하지 않음 — suppress 된 경우 Mirrorgen 은 emit 정확성을 보장하지 않습니다.
+
+## Cross-test attribute
+
+- `[GenerateCrossTest(Samples = N, Seed = S)]` — 메서드 당 N 개 random sample, seed 로 재현. fixture row 생성의 필요 조건.
+- `[CrossTestCase(values...)]` — 명시적 input 한 줄을 random sample 옆에 추가. 중첩 가능 (여러 attribute 모두 소비). 인자 수가 메서드 parameter 수와 일치해야 하고, 값은 C# attribute constant 여야. random sampling 이 거의 못 잡는 corner — `int.MinValue`, `0`, `int.MaxValue`, 과거 버그를 발생시킨 값 — 에 적합.

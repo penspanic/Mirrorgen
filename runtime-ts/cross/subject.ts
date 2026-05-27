@@ -123,6 +123,10 @@ export function CountDownToZero(n: number): number {
   return steps;
 }
 
+export function WrapMul(a: number, b: number): number {
+  return Math.imul(a, b);
+}
+
 export function FirstNonNegativeStep(n: number): number {
   let i: number = n;
   if (i < -50) {

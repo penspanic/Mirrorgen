@@ -138,6 +138,21 @@ public static class Subject
         return steps;
     }
 
+    // Integer-wrap corner cases for the existing `Total` method. Random
+    // sampling almost never hits int.MaxValue * int.MinValue, but the
+    // walker's Math.imul shape has to round-trip exactly when it does.
+    [Transpile]
+    [GenerateCrossTest(Samples = 6, Seed = 30)]
+    [CrossTestCase(int.MaxValue, 1)]
+    [CrossTestCase(int.MinValue, -1)]
+    [CrossTestCase(int.MaxValue, int.MinValue)]
+    [CrossTestCase(0, 0)]
+    [CrossTestCase(-1, -1)]
+    public static int WrapMul(int a, int b)
+    {
+        return a * b;
+    }
+
     // do-while with break.
     [Transpile, GenerateCrossTest(Samples = 10, Seed = 29)]
     public static int FirstNonNegativeStep(int n)

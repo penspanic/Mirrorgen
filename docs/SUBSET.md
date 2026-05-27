@@ -69,3 +69,8 @@ Subset violations on `[Transpile]` members are surfaced as build errors with sta
 | MG0006  | Error    | declaring class of a `[Transpile]` method inherits from a non-`object` base              |
 
 Diagnostic ids in the `MG0001`..`MG0099` range are stable. Suppressing them with `#pragma warning disable` is supported but not recommended — Mirrorgen makes no guarantee about emit correctness for suppressed cases.
+
+## Cross-test attributes
+
+- `[GenerateCrossTest(Samples = N, Seed = S)]` — N random samples per method, seeded for reproducibility. Required to produce any fixture rows.
+- `[CrossTestCase(values...)]` — adds one explicit input row alongside the random samples. Stacks (multiple attributes are all consumed). Argument count must match the method's parameter count; values must be C# attribute constants. Useful for the corner inputs random sampling almost never hits — `int.MinValue`, `0`, `int.MaxValue`, the value that triggered an old bug.
