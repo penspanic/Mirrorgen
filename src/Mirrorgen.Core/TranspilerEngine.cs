@@ -312,6 +312,14 @@ public static class TranspilerEngine
 
         public ITypeSymbol? SymbolForTypeSyntax(TypeSyntax type) =>
             _model.GetSymbolInfo(type).Symbol as ITypeSymbol;
+
+        public bool TryGetConstantValue(ExpressionSyntax expr, out object? value)
+        {
+            var c = _model.GetConstantValue(expr);
+            if (c.HasValue) { value = c.Value; return true; }
+            value = null;
+            return false;
+        }
     }
 
     static readonly Lazy<MetadataReference[]> TrustedReferences = new(BuildTrustedReferences);
@@ -449,8 +457,9 @@ public static class TranspilerEngine
     static string EmitTypeDeclaration(TypeDeclarationSyntax decl, EmitContext ctx)
     {
         var name = ReadEmitName(decl.AttributeLists) ?? decl.Identifier.Text;
-        var sb = new StringBuilder();
-        sb.Append("export interface ").Append(name).AppendLine(" {");
+        var interfaceBody = new StringBuilder();
+        var consts = new StringBuilder();
+        var hasInterfaceMember = false;
 
         var seen = new HashSet<string>(StringComparer.Ordinal);
 
@@ -466,7 +475,8 @@ public static class TranspilerEngine
                 }
                 var member = p.Identifier.Text;
                 if (!seen.Add(member)) continue;
-                sb.Append(BodyIndent).Append(member).Append(": ").Append(MapType(p.Type, ctx)).AppendLine(";");
+                interfaceBody.Append(BodyIndent).Append(member).Append(": ").Append(MapType(p.Type, ctx)).AppendLine(";");
+                hasInterfaceMember = true;
             }
         }
 
@@ -479,24 +489,103 @@ public static class TranspilerEngine
                     {
                         var member = prop.Identifier.Text;
                         if (!seen.Add(member)) continue;
-                        sb.Append(BodyIndent).Append(member).Append(": ").Append(MapType(prop.Type, ctx)).AppendLine(";");
+                        interfaceBody.Append(BodyIndent).Append(member).Append(": ").Append(MapType(prop.Type, ctx)).AppendLine(";");
+                        hasInterfaceMember = true;
                         break;
                     }
                 case FieldDeclarationSyntax field:
-                    foreach (var variable in field.Declaration.Variables)
                     {
-                        var member = variable.Identifier.Text;
-                        if (!seen.Add(member)) continue;
-                        sb.Append(BodyIndent).Append(member).Append(": ").Append(MapType(field.Declaration.Type, ctx)).AppendLine(";");
+                        var isPublic = field.Modifiers.Any(m => m.IsKind(SyntaxKind.PublicKeyword));
+                        var isConst = field.Modifiers.Any(m => m.IsKind(SyntaxKind.ConstKeyword));
+                        var isStatic = field.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword));
+                        // Non-public members never cross the C# ↔ TS boundary regardless of kind.
+                        if (!isPublic) break;
+                        foreach (var variable in field.Declaration.Variables)
+                        {
+                            var member = variable.Identifier.Text;
+                            if (!seen.Add(member)) continue;
+                            if (isConst && variable.Initializer is not null
+                                && ctx.TryGetConstantValue(variable.Initializer.Value, out var constValue)
+                                && TryFormatTsLiteral(constValue, out var literal))
+                            {
+                                var tsType = MapType(field.Declaration.Type, ctx);
+                                consts.Append("export const ").Append(member)
+                                    .Append(": ").Append(tsType)
+                                    .Append(" = ").Append(literal).AppendLine(";");
+                            }
+                            else if (isConst || isStatic)
+                            {
+                                // Static / const without a literal we can format — skip rather
+                                // than pretend it's an instance interface member.
+                            }
+                            else
+                            {
+                                interfaceBody.Append(BodyIndent).Append(member).Append(": ").Append(MapType(field.Declaration.Type, ctx)).AppendLine(";");
+                                hasInterfaceMember = true;
+                            }
+                        }
+                        break;
                     }
-                    break;
                 // Methods / constructors / etc. on a [Transpile] type aren't part of
                 // the v0.1 surface — silently skip rather than throw so consumers can
                 // freely add server-side helpers next to the data shape.
             }
         }
 
-        sb.AppendLine("}");
+        var sb = new StringBuilder();
+        if (consts.Length > 0)
+        {
+            sb.Append(consts);
+            if (hasInterfaceMember) sb.AppendLine();
+        }
+        if (hasInterfaceMember)
+        {
+            sb.Append("export interface ").Append(name).AppendLine(" {");
+            sb.Append(interfaceBody);
+            sb.AppendLine("}");
+        }
+        return sb.ToString();
+    }
+
+    static bool TryFormatTsLiteral(object? value, out string literal)
+    {
+        switch (value)
+        {
+            case null: literal = "null"; return true;
+            case bool b: literal = b ? "true" : "false"; return true;
+            case string s: literal = "\"" + EscapeStringLiteral(s) + "\""; return true;
+            case char c: literal = "\"" + EscapeStringLiteral(c.ToString()) + "\""; return true;
+            case byte u8: literal = u8.ToString(CultureInfo.InvariantCulture); return true;
+            case sbyte i8: literal = i8.ToString(CultureInfo.InvariantCulture); return true;
+            case short i16: literal = i16.ToString(CultureInfo.InvariantCulture); return true;
+            case ushort u16: literal = u16.ToString(CultureInfo.InvariantCulture); return true;
+            case int i32: literal = i32.ToString(CultureInfo.InvariantCulture); return true;
+            case uint u32: literal = u32.ToString(CultureInfo.InvariantCulture); return true;
+            case long i64: literal = i64.ToString(CultureInfo.InvariantCulture) + "n"; return true;
+            case ulong u64: literal = u64.ToString(CultureInfo.InvariantCulture) + "n"; return true;
+            case float f32: literal = f32.ToString("R", CultureInfo.InvariantCulture); return true;
+            case double f64: literal = f64.ToString("R", CultureInfo.InvariantCulture); return true;
+            case decimal dec: literal = dec.ToString(CultureInfo.InvariantCulture); return true;
+        }
+        literal = string.Empty;
+        return false;
+    }
+
+    static string EscapeStringLiteral(string s)
+    {
+        var sb = new StringBuilder(s.Length);
+        foreach (var c in s)
+        {
+            switch (c)
+            {
+                case '\\': sb.Append("\\\\"); break;
+                case '"': sb.Append("\\\""); break;
+                case '\n': sb.Append("\\n"); break;
+                case '\r': sb.Append("\\r"); break;
+                case '\t': sb.Append("\\t"); break;
+                default: sb.Append(c); break;
+            }
+        }
         return sb.ToString();
     }
 
