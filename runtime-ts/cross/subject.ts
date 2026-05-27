@@ -73,3 +73,36 @@ export function IsWithinDistance(x1: number, y1: number, x2: number, y2: number,
   let dy: number = ((y2 - y1) | 0);
   return ((Math.imul(dx, dx) + Math.imul(dy, dy)) | 0) <= Math.imul(radius, radius);
 }
+
+export function MaxThenDouble(a: number, b: number): number {
+  return Math.imul(Math.max(a, b), 2);
+}
+
+export function Clamp(v: number, lo: number, hi: number): number {
+  return Math.min(Math.max(v, lo), hi);
+}
+
+export function CategoryByMod(x: number): number {
+  let m: number = ((x % 3) | 0);
+  if (m < 0) {
+    m += 3;
+  }
+  return ((): number => { if (m === 0) return 100; if (m === 1) return 200; return 300; throw new Error("switch expression: no arm matched"); })();
+}
+
+export function LabelMod4(x: number): string {
+  let m: number = ((x % 4) | 0);
+  if (m < 0) {
+    m += 4;
+  }
+  switch (m) {
+    case 0:
+      return "zero";
+    case 1:
+      return "one";
+    case 2:
+      return "two";
+    default:
+      return "three";
+  }
+}

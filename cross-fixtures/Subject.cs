@@ -77,4 +77,48 @@ public static class Subject
         int dy = y2 - y1;
         return dx * dx + dy * dy <= radius * radius;
     }
+
+    // Math.* whitelist round-trip. Math.Max composed with int wrap exercises
+    // both the System.Math mapping and the multiplication-wrap path on the
+    // result of an external call.
+    [Transpile, GenerateCrossTest(Samples = 12, Seed = 23)]
+    public static int MaxThenDouble(int a, int b)
+    {
+        return System.Math.Max(a, b) * 2;
+    }
+
+    [Transpile, GenerateCrossTest(Samples = 12, Seed = 24)]
+    public static int Clamp(int v, int lo, int hi)
+    {
+        return System.Math.Min(System.Math.Max(v, lo), hi);
+    }
+
+    // switch expression on int constants.
+    [Transpile, GenerateCrossTest(Samples = 12, Seed = 25)]
+    public static int CategoryByMod(int x)
+    {
+        int m = x % 3;
+        if (m < 0) m += 3;
+        return m switch
+        {
+            0 => 100,
+            1 => 200,
+            _ => 300,
+        };
+    }
+
+    // switch statement on int constants.
+    [Transpile, GenerateCrossTest(Samples = 10, Seed = 26)]
+    public static string LabelMod4(int x)
+    {
+        int m = x % 4;
+        if (m < 0) m += 4;
+        switch (m)
+        {
+            case 0: return "zero";
+            case 1: return "one";
+            case 2: return "two";
+            default: return "three";
+        }
+    }
 }

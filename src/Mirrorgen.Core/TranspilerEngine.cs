@@ -505,6 +505,8 @@ public static class TranspilerEngine
                 return EmitForStatement(forStmt, ctx, indent);
             case ForEachStatementSyntax fe:
                 return EmitForEachStatement(fe, ctx, indent);
+            case SwitchStatementSyntax sw:
+                return EmitSwitchStatement(sw, ctx, indent);
             default:
                 throw new NotSupportedException($"Unsupported statement: {stmt.Kind()}");
         }
@@ -570,6 +572,91 @@ public static class TranspilerEngine
         sb.Append(EmitBranchBody(fe.Statement, ctx, indent + BodyIndent));
         sb.Append(indent).AppendLine("}");
         return sb.ToString();
+    }
+
+    static string EmitSwitchStatement(SwitchStatementSyntax sw, EmitContext ctx, string indent)
+    {
+        var sb = new StringBuilder();
+        sb.Append(indent).Append("switch (").Append(EmitExpression(sw.Expression, ctx)).AppendLine(") {");
+        var caseIndent = indent + BodyIndent;
+        var bodyIndent = caseIndent + BodyIndent;
+        foreach (var section in sw.Sections)
+        {
+            foreach (var label in section.Labels)
+            {
+                switch (label)
+                {
+                    case CaseSwitchLabelSyntax cs:
+                        sb.Append(caseIndent).Append("case ")
+                          .Append(EmitExpression(cs.Value, ctx)).AppendLine(":");
+                        break;
+                    case DefaultSwitchLabelSyntax:
+                        sb.Append(caseIndent).AppendLine("default:");
+                        break;
+                    case CasePatternSwitchLabelSyntax cp:
+                        sb.Append(caseIndent).Append("case ")
+                          .Append(EmitSwitchPattern(cp.Pattern, ctx)).AppendLine(":");
+                        break;
+                    default:
+                        throw new NotSupportedException($"Unsupported switch label: {label.Kind()}");
+                }
+            }
+            foreach (var stmt in section.Statements)
+            {
+                if (stmt is BreakStatementSyntax)
+                {
+                    sb.Append(bodyIndent).AppendLine("break;");
+                    continue;
+                }
+                sb.Append(EmitStatement(stmt, ctx, bodyIndent));
+            }
+        }
+        sb.Append(indent).AppendLine("}");
+        return sb.ToString();
+    }
+
+    static string EmitSwitchExpression(SwitchExpressionSyntax swx, EmitContext ctx)
+    {
+        // C# switch expressions don't have a TS counterpart — emit a self-
+        // calling arrow that branches with if-returns. This preserves the
+        // expression context the caller is in.
+        var governing = EmitExpression(swx.GoverningExpression, ctx);
+        var sb = new StringBuilder();
+        sb.Append("((): ").Append(InferSwitchExpressionResultType(swx, ctx)).Append(" => { ");
+        foreach (var arm in swx.Arms)
+        {
+            if (arm.Pattern is DiscardPatternSyntax)
+            {
+                sb.Append("return ").Append(EmitExpression(arm.Expression, ctx)).Append("; ");
+                continue;
+            }
+            sb.Append("if (").Append(governing).Append(" === ")
+              .Append(EmitSwitchPattern(arm.Pattern, ctx)).Append(") return ")
+              .Append(EmitExpression(arm.Expression, ctx)).Append("; ");
+        }
+        // Fall-through guard — C# would throw SwitchExpressionException at
+        // runtime if no arm matched. Mirror that loudly so silent undefined
+        // values don't leak past the boundary.
+        sb.Append("throw new Error(\"switch expression: no arm matched\"); })()");
+        return sb.ToString();
+    }
+
+    static string InferSwitchExpressionResultType(SwitchExpressionSyntax swx, EmitContext ctx)
+    {
+        var type = ctx.TypeOf(swx);
+        return type is null ? "unknown" : MapTypeSymbol(type);
+    }
+
+    static string EmitSwitchPattern(PatternSyntax pattern, EmitContext ctx)
+    {
+        switch (pattern)
+        {
+            case ConstantPatternSyntax cp:
+                return EmitExpression(cp.Expression, ctx);
+            default:
+                throw new NotSupportedException(
+                    $"Unsupported switch pattern '{pattern.Kind()}'. Only constant / enum-member patterns are supported in v0.1.");
+        }
     }
 
     static bool IsArrayLikeEnumerable(ITypeSymbol? type)
@@ -680,6 +767,8 @@ public static class TranspilerEngine
                 return EmitInvocation(inv, ctx);
             case MemberAccessExpressionSyntax member when member.IsKind(SyntaxKind.SimpleMemberAccessExpression):
                 return $"{EmitExpression(member.Expression, ctx)}.{member.Name.Identifier.Text}";
+            case SwitchExpressionSyntax swx:
+                return EmitSwitchExpression(swx, ctx);
             case ElementAccessExpressionSyntax ea:
                 {
                     var indices = string.Join(", ",
@@ -696,15 +785,57 @@ public static class TranspilerEngine
         var target = ctx.InvocationTarget(inv)
             ?? throw new NotSupportedException($"Cannot resolve target of invocation '{inv}'.");
 
+        var args = string.Join(", ",
+            inv.ArgumentList.Arguments.Select(a => EmitExpression(a.Expression, ctx)));
+
+        if (TryMapMathInvocation(target, out var jsName))
+        {
+            return $"Math.{jsName}({args})";
+        }
+
         if (!IsTranspileMethodSymbol(target))
         {
             throw new NotSupportedException(
                 $"Method '{target.ContainingType?.Name}.{target.Name}' is not marked [Transpile]; calls outside the transpile boundary are not allowed.");
         }
 
-        var args = string.Join(", ",
-            inv.ArgumentList.Arguments.Select(a => EmitExpression(a.Expression, ctx)));
         return $"{target.Name}({args})";
+    }
+
+    // System.Math / System.MathF members whose semantics we trust to be
+    // bit-equivalent to JS Math.*. Methods that diverge (Round's banker's
+    // rounding, Truncate's sign behaviour around -0, etc.) are intentionally
+    // left out and will fall through to the "not [Transpile]" error.
+    static readonly System.Collections.Generic.Dictionary<string, string> MathMemberMap = new(StringComparer.Ordinal)
+    {
+        { "Min", "min" },
+        { "Max", "max" },
+        { "Abs", "abs" },
+        { "Floor", "floor" },
+        { "Ceiling", "ceil" },
+        { "Sign", "sign" },
+        { "Sqrt", "sqrt" },
+        { "Pow", "pow" },
+        { "Log", "log" },
+        { "Log2", "log2" },
+        { "Log10", "log10" },
+        { "Exp", "exp" },
+        { "Sin", "sin" },
+        { "Cos", "cos" },
+        { "Tan", "tan" },
+        { "Asin", "asin" },
+        { "Acos", "acos" },
+        { "Atan", "atan" },
+        { "Atan2", "atan2" },
+    };
+
+    static bool TryMapMathInvocation(IMethodSymbol method, out string jsName)
+    {
+        jsName = string.Empty;
+        if (method.ContainingType is null) return false;
+        var containing = method.ContainingType.ToDisplayString();
+        if (containing != "System.Math" && containing != "System.MathF") return false;
+        return MathMemberMap.TryGetValue(method.Name, out jsName!);
     }
 
     static bool IsTranspileMethodSymbol(IMethodSymbol method)
