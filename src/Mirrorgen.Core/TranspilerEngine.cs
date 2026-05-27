@@ -786,10 +786,11 @@ public static class TranspilerEngine
                         // Non-public const fields still need to surface as module-local
                         // `const` declarations: transpiled method bodies reference them
                         // by name (e.g. `low >> FaceShift`), so dropping them produces
-                        // undefined-identifier errors at the TS layer. Skip non-const
-                        // non-public members though — those don't appear in bodies and
-                        // would only pollute the interface shape.
-                        if (!isPublic && !isConst) break;
+                        // undefined-identifier errors at the TS layer. The same applies
+                        // to private `static readonly` fields whose initializer is a
+                        // recognizable literal (array / object creation) — bodies index
+                        // into them too. Pure private instance fields stay hidden.
+                        if (!isPublic && !isConst && !isStatic) break;
                         var fieldEmitName = ReadEmitName(field.AttributeLists);
                         foreach (var variable in field.Declaration.Variables)
                         {
