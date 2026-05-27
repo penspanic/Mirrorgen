@@ -20,4 +20,12 @@
                           OutputItemType="" />
     </ItemGroup>
 
+    <ItemGroup>
+        <!-- TsGenParity fixture: source .cs + TsGen-emitted golden .ts copied
+             to the test output dir so TsGenParityTests can read them at runtime. -->
+        <None Include="Fixtures\**\*.*" CopyToOutputDirectory="PreserveNewest" />
+        <!-- Exclude fixture .cs from the test project's own compile -->
+        <Compile Remove="Fixtures\**\*.cs" />
+    </ItemGroup>
+
 </Project>
