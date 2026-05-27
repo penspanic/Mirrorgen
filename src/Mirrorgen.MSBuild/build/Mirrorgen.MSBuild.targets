@@ -31,7 +31,8 @@
                        SourceRoot="$(MirrorgenSourceRoot)"
                        OutputDirectory="$(MirrorgenOutput)"
                        AssemblyPath="$(TargetPath)"
-                       MirrorgenConfig="$(MirrorgenConfig)" />
+                       MirrorgenConfig="$(MirrorgenConfig)"
+                       AggregateOutputFile="$(MirrorgenAggregateOutputFile)" />
         <Touch Files="$(IntermediateOutputPath)mirrorgen.stamp" AlwaysCreate="true" />
     </Target>
 

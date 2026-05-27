@@ -26,6 +26,13 @@ public sealed class MirrorgenTask : Microsoft.Build.Utilities.Task
     /// <summary>Fully-qualified name of the IMirrorgenExtension implementation, if any.</summary>
     public string MirrorgenConfig { get; set; } = string.Empty;
 
+    /// <summary>
+    /// When set, BatchTranspiler aggregates every emitted .ts into this
+    /// single filename under <see cref="OutputDirectory"/>. Matches TsGen's
+    /// single-file output shape for cutover compatibility (e.g. "off-network.ts").
+    /// </summary>
+    public string AggregateOutputFile { get; set; } = string.Empty;
+
     public override bool Execute()
     {
         if (string.IsNullOrEmpty(OutputDirectory))
@@ -38,7 +45,10 @@ public sealed class MirrorgenTask : Microsoft.Build.Utilities.Task
         {
             var registry = LoadRegistry();
             var files = Sources.Select(item => item.GetMetadata("FullPath")).ToList();
-            var result = BatchTranspiler.TranspileFiles(files, SourceRoot, OutputDirectory, registry);
+            var options = string.IsNullOrEmpty(AggregateOutputFile)
+                ? TranspileOptions.Default
+                : new TranspileOptions { AggregateOutputFile = AggregateOutputFile };
+            var result = BatchTranspiler.TranspileFiles(files, SourceRoot, OutputDirectory, registry, options);
             Log.LogMessage(
                 MessageImportance.High,
                 $"Mirrorgen {TranspilerEngine.Version}: wrote {result.WrittenCount} TS file(s), skipped {result.SkippedCount}.");
