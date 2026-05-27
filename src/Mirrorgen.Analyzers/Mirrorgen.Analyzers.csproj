@@ -9,6 +9,14 @@
         <DevelopmentDependency>true</DevelopmentDependency>
         <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
         <NoPackageAnalysis>true</NoPackageAnalysis>
+        <!--
+          The analyzer .dll is packed into analyzers/dotnet/cs/ rather than lib/,
+          so the default snupkg layout (which expects symbols beside lib/) ends up
+          empty and is rejected by nuget.org. Skip symbol packaging here — embed
+          the PDB inside the .nupkg via DebugType=embedded instead.
+        -->
+        <IncludeSymbols>false</IncludeSymbols>
+        <DebugType>embedded</DebugType>
         <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);_AddAnalyzerToPackage</TargetsForTfmSpecificContentInPackage>
     </PropertyGroup>
 
