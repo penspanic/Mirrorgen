@@ -68,6 +68,24 @@ public class RecordSurfaceTests
     }
 
     [Fact]
+    public void Abstract_Base_Record_Emits_Empty_Interface_For_Subtype_Resolution()
+    {
+        // Polymorphic base records like `abstract record TopologyParams;` carry
+        // no own properties but downstream subtypes (`PlanarTopologyParams :
+        // TopologyParams`) reference the base by name. The empty interface
+        // keeps TS resolution working, matching TsGen's behaviour.
+        var ts = TranspilerEngine.TranspileSource("""
+            [Mirrorgen.Attributes.Transpile]
+            public abstract record TopologyParams;
+            [Mirrorgen.Attributes.Transpile]
+            public sealed record PlanarTopologyParams(double CellSize) : TopologyParams;
+            """);
+        Assert.Contains("export interface TopologyParams {", ts);
+        Assert.Contains("export interface PlanarTopologyParams {", ts);
+        Assert.Contains("CellSize: number;", ts);
+    }
+
+    [Fact]
     public void Partial_Class_Emits_Single_Combined_Interface()
     {
         // Two partial declarations in the same source — Roslyn merges them at

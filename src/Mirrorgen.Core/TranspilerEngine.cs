@@ -682,13 +682,21 @@ public static class TranspilerEngine
             }
         }
 
+        // Polymorphic base records (`abstract record TopologyParams;`) emit an
+        // empty interface so subtypes that reference the base name still resolve
+        // — matches TsGen's behaviour. Const-only static classes skip the
+        // empty-interface noise (intent inherited from #46).
+        var emitEmptyInterface = !hasInterfaceMember
+            && consts.Length == 0
+            && decl is RecordDeclarationSyntax or ClassDeclarationSyntax or StructDeclarationSyntax;
+
         var sb = new StringBuilder();
         if (consts.Length > 0)
         {
             sb.Append(consts);
             if (hasInterfaceMember) sb.AppendLine();
         }
-        if (hasInterfaceMember)
+        if (hasInterfaceMember || emitEmptyInterface)
         {
             sb.Append("export interface ").Append(name).AppendLine(" {");
             sb.Append(interfaceBody);
