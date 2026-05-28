@@ -2247,16 +2247,15 @@ public static class TranspilerEngine
         if (tupleType is { IsTupleType: true } && HasNamedTupleElements(tupleType, locals.Count))
         {
             sb.Append("{ ");
+            bool first = true;
             for (int i = 0; i < locals.Count; i++)
             {
+                if (locals[i] == "_") continue; // omit discards from the object pattern
                 var field = tupleType.TupleElements[i].Name;
                 if (string.IsNullOrEmpty(field)) field = $"Item{i + 1}";
-                if (i > 0) sb.Append(", ");
-                if (locals[i] == "_")
-                {
-                    sb.Append(field).Append(": _");
-                }
-                else if (field == locals[i])
+                if (!first) sb.Append(", ");
+                first = false;
+                if (field == locals[i])
                 {
                     sb.Append(locals[i]);
                 }
@@ -2269,7 +2268,24 @@ public static class TranspilerEngine
         }
         else
         {
-            sb.Append("[").Append(string.Join(", ", locals)).Append("]");
+            // Positional array pattern: discards become unique slot names so
+            // multiple `_` don't redeclare. TS allows trailing holes via
+            // empty entries (`[, , x]`), so leave a comma for each leading
+            // discard slot and only name the bound positions.
+            sb.Append("[");
+            for (int i = 0; i < locals.Count; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                if (locals[i] == "_")
+                {
+                    // empty position — TS treats it as a hole binding
+                }
+                else
+                {
+                    sb.Append(locals[i]);
+                }
+            }
+            sb.Append("]");
         }
         sb.Append(" = ").Append(rhs).AppendLine(";");
         emit = sb.ToString();
