@@ -3270,6 +3270,23 @@ public static class TranspilerEngine
         var bodyIndent2 = BodyIndent + BodyIndent;
         var anyBodyContent = false;
 
+        // Collect names of [NoTranspile] instance fields so the ctor body
+        // emit can skip statements that touch them. Also skip the field
+        // declarations themselves below.
+        var hiddenFieldNames = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var member in decl.Members)
+        {
+            if (member is FieldDeclarationSyntax field
+                && HasNoTranspileAttribute(field.AttributeLists)
+                && !field.Modifiers.Any(SyntaxKind.StaticKeyword))
+            {
+                foreach (var v in field.Declaration.Variables)
+                {
+                    hiddenFieldNames.Add(v.Identifier.Text);
+                }
+            }
+        }
+
         // Pass 1 — instance fields and auto-property storage. Computed
         // properties (expression-bodied get-only) are not storage; they
         // emit as getters in pass 3.
@@ -3279,6 +3296,7 @@ public static class TranspilerEngine
             if (member is PropertyDeclarationSyntax prop)
             {
                 if (prop.Modifiers.Any(SyntaxKind.StaticKeyword)) continue;
+                if (HasNoTranspileAttribute(prop.AttributeLists)) continue;
                 if (IsComputedProperty(prop)) continue;
                 if (!IsAutoProperty(prop)) continue;
                 var propName = ReadEmitName(prop.AttributeLists) ?? prop.Identifier.Text;
@@ -3290,6 +3308,7 @@ public static class TranspilerEngine
             {
                 if (field.Modifiers.Any(SyntaxKind.StaticKeyword)) continue;
                 if (field.Modifiers.Any(SyntaxKind.ConstKeyword)) continue;
+                if (HasNoTranspileAttribute(field.AttributeLists)) continue;
                 var isPublic = field.Modifiers.Any(SyntaxKind.PublicKeyword);
                 var isReadonly = field.Modifiers.Any(SyntaxKind.ReadOnlyKeyword);
                 foreach (var v in field.Declaration.Variables)
@@ -3337,6 +3356,12 @@ public static class TranspilerEngine
             {
                 foreach (var stmt in cbody.Statements)
                 {
+                    // Skip ctor statements that assign to a [NoTranspile]
+                    // field — the field itself is hidden from the emit so
+                    // its initialization has no place to land. Keeps the
+                    // walker from descending into a `new T(...)` of a
+                    // non-mirrored helper type the field happens to hold.
+                    if (TargetsHiddenField(stmt, hiddenFieldNames)) continue;
                     sb.Append(EmitStatement(stmt, ctx, bodyIndent2));
                 }
             }
@@ -3548,6 +3573,22 @@ public static class TranspilerEngine
             parts.Add($"{pName}: {pType}{def}");
         }
         return string.Join(", ", parts);
+    }
+
+    static bool TargetsHiddenField(StatementSyntax stmt, HashSet<string> hiddenFieldNames)
+    {
+        if (hiddenFieldNames.Count == 0) return false;
+        if (stmt is not ExpressionStatementSyntax es) return false;
+        if (es.Expression is not AssignmentExpressionSyntax assign) return false;
+        var lhs = assign.Left;
+        // Match either `Foo = ...` (bare identifier) or `this.Foo = ...`.
+        return lhs switch
+        {
+            IdentifierNameSyntax id => hiddenFieldNames.Contains(id.Identifier.Text),
+            MemberAccessExpressionSyntax ma when ma.Expression is ThisExpressionSyntax =>
+                hiddenFieldNames.Contains(ma.Name.Identifier.Text),
+            _ => false,
+        };
     }
 
     static bool IsAutoProperty(PropertyDeclarationSyntax prop)
