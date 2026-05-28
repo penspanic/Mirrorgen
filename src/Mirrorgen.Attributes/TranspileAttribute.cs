@@ -11,14 +11,6 @@ namespace Mirrorgen;
 public sealed class TranspileAttribute : Attribute
 {
     public string? EmitName { get; set; }
-
-    public TranspileShape Shape { get; set; } = TranspileShape.Interface;
-}
-
-public enum TranspileShape
-{
-    Interface = 0,
-    Class = 1,
 }
 
 /// <summary>
