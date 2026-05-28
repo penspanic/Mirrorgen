@@ -863,12 +863,13 @@ public static class TranspilerEngine
                                 && (staticInit is ArrayCreationExpressionSyntax
                                     || staticInit is ImplicitArrayCreationExpressionSyntax
                                     || staticInit is ObjectCreationExpressionSyntax
-                                    || staticInit is CollectionExpressionSyntax))
+                                    || staticInit is CollectionExpressionSyntax
+                                    || staticInit is ImplicitObjectCreationExpressionSyntax))
                             {
                                 // `static readonly T[] X = new T[] { ... }` or
-                                // `static readonly T X = new T(...)` — emit at module
-                                // scope as `const X: T = <emitted>;` so transpiled
-                                // bodies that read it (e.g. `X[i]`) resolve.
+                                // `static readonly T X = new T(...)` or `new(...)`
+                                // — emit at module scope as `const X: T = …;` so
+                                // transpiled bodies that read it (e.g. `X[i]`) resolve.
                                 var tsType = MapType(field.Declaration.Type, ctx);
                                 var keyword = isPublic ? "export const " : "const ";
                                 var initEmit = EmitExpression(staticInit, ctx);
@@ -2052,6 +2053,19 @@ public static class TranspilerEngine
                         .Select(e => EmitExpression(e, ctx));
                     return "[" + string.Join(", ", elems) + "]";
                 }
+            case CollectionExpressionSyntax ce:
+                {
+                    var elems = new List<string>();
+                    foreach (var elem in ce.Elements)
+                    {
+                        if (elem is ExpressionElementSyntax ee)
+                            elems.Add(EmitExpression(ee.Expression, ctx));
+                        else
+                            throw new NotSupportedException(
+                                $"Unsupported collection expression element: {elem.Kind()}.");
+                    }
+                    return "[" + string.Join(", ", elems) + "]";
+                }
             case ArrayCreationExpressionSyntax ace:
                 {
                     if (ace.Initializer is { } initializer)
@@ -2318,9 +2332,10 @@ public static class TranspilerEngine
         emit = string.Empty;
         if (ctx.TypeOf(ioc) is not INamedTypeSymbol named) return false;
         if (!IsTranspileType(named)) return false;
-        var paramNames = GetPositionalRecordParamNames(named);
-        if (paramNames is null) return false;
         var args = ioc.ArgumentList.Arguments;
+        var paramNames = GetPositionalRecordParamNames(named)
+            ?? GetCtorParamPropertyNames(named, args.Count);
+        if (paramNames is null) return false;
         if (paramNames.Count != args.Count) return false;
         var parts = new List<string>(args.Count);
         for (int i = 0; i < args.Count; i++)
@@ -2329,6 +2344,44 @@ public static class TranspilerEngine
         }
         emit = "{ " + string.Join(", ", parts) + " }";
         return true;
+    }
+
+    // For a non-record type with an explicit ctor (e.g. `readonly struct
+    // EdgeTransform { EdgeTransform(WorldPoint translation, Quaternion rotation) }`
+    // matched by auto-properties `Translation` / `Rotation`), map each ctor
+    // parameter to a same-cased property and return the property names so the
+    // call `new T(translation, rotation)` emits as `{ Translation: ..., Rotation: ... }`.
+    // Returns null when the type has no public ctor matching the arg count or
+    // when any param has no matching property.
+    static List<string>? GetCtorParamPropertyNames(INamedTypeSymbol type, int argCount)
+    {
+        IMethodSymbol? matchingCtor = null;
+        foreach (var ctor in type.InstanceConstructors)
+        {
+            if (ctor.Parameters.Length == argCount)
+            {
+                matchingCtor = ctor;
+                break;
+            }
+        }
+        if (matchingCtor is null) return null;
+        var propNames = new List<string>(matchingCtor.Parameters.Length);
+        foreach (var p in matchingCtor.Parameters)
+        {
+            string? match = null;
+            foreach (var m in type.GetMembers())
+            {
+                if (m is IPropertySymbol prop && !prop.IsStatic
+                    && string.Equals(prop.Name, p.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    match = prop.Name;
+                    break;
+                }
+            }
+            if (match is null) return null;
+            propNames.Add(match);
+        }
+        return propNames;
     }
 
     // For identifier references, honour `[Transpile(EmitName="...")]` on the
@@ -3321,6 +3374,47 @@ public static class TranspilerEngine
         using var _scope = ctx.PushInstanceClassScope(symbol);
 
         var sb = new StringBuilder();
+
+        // Static readonly fields with literal initializers (arrays, object
+        // creations, collection literals) emit at module scope so callsites
+        // inside the class body can resolve them as bare identifiers. Const
+        // refs in method bodies inline directly (see ResolveIdentifierEmit),
+        // so plain `public const` fields here are intentionally skipped.
+        foreach (var member in decl.Members)
+        {
+            if (member is not FieldDeclarationSyntax field) continue;
+            if (HasNoTranspileAttribute(field.AttributeLists)) continue;
+            if (!field.Modifiers.Any(SyntaxKind.StaticKeyword)) continue;
+            if (field.Modifiers.Any(SyntaxKind.ConstKeyword)) continue;
+            foreach (var v in field.Declaration.Variables)
+            {
+                if (v.Initializer?.Value is not { } init) continue;
+                string? initEmit = null;
+                if (init is ArrayCreationExpressionSyntax
+                    || init is ImplicitArrayCreationExpressionSyntax
+                    || init is ObjectCreationExpressionSyntax
+                    || init is CollectionExpressionSyntax
+                    || init is ImplicitObjectCreationExpressionSyntax)
+                {
+                    initEmit = EmitExpression(init, ctx);
+                }
+                else if (IsDefaultLiteralExpression(init)
+                    && ctx.TypeOf(init) is INamedTypeSymbol defaultType
+                    && TryEmitDefaultLiteral(defaultType, ctx, out var defaultEmit))
+                {
+                    initEmit = defaultEmit;
+                }
+                if (initEmit is null) continue;
+                var tsType = MapType(field.Declaration.Type, ctx);
+                var isPublic = field.Modifiers.Any(SyntaxKind.PublicKeyword);
+                var keyword = isPublic ? "export const " : "const ";
+                sb.Append(keyword).Append(v.Identifier.Text)
+                  .Append(": ").Append(tsType)
+                  .Append(" = ").Append(initEmit).AppendLine(";");
+            }
+        }
+        if (sb.Length > 0) sb.AppendLine();
+
         sb.Append("export class ").Append(name);
 
         // implements clause — keep only base types that themselves carry
