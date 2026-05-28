@@ -2591,6 +2591,11 @@ public static class TranspilerEngine
             return divEmit;
         }
 
+        if (TryMapDoubleSingleStaticInvocation(inv, target, ctx, out var dblEmit))
+        {
+            return dblEmit;
+        }
+
         if (TryMapDictionaryInvocation(inv, target, ctx, out var dictEmit))
         {
             return dictEmit;
@@ -2838,6 +2843,47 @@ public static class TranspilerEngine
         var containing = method.ContainingType.ToDisplayString();
         if (containing != "System.Math" && containing != "System.MathF") return false;
         return MathMemberMap.TryGetValue(method.Name, out jsName!);
+    }
+
+    // System.Double / System.Single static helpers — the finite-vs-NaN-vs-Inf
+    // family that C# code conventionally guards float math with. JS has
+    // Number.isNaN / Number.isFinite as the precise equivalents; the
+    // ±Infinity probes expand to a comparison against the global Infinity
+    // constants so the emit stays self-contained (no helper functions).
+    static bool TryMapDoubleSingleStaticInvocation(InvocationExpressionSyntax inv, IMethodSymbol target, EmitContext ctx, out string emit)
+    {
+        emit = string.Empty;
+        if (target.ContainingType is null) return false;
+        // `ToDisplayString()` returns the C# keyword alias ("double" / "float")
+        // for predefined types, not "System.Double". Compare via SpecialType so
+        // we catch both `double.IsNaN(x)` and `System.Double.IsNaN(x)` call
+        // syntax.
+        var specialType = target.ContainingType.SpecialType;
+        if (specialType != SpecialType.System_Double && specialType != SpecialType.System_Single) return false;
+        if (inv.ArgumentList.Arguments.Count != 1) return false;
+        var arg = EmitExpression(inv.ArgumentList.Arguments[0].Expression, ctx);
+        switch (target.Name)
+        {
+            case "IsNaN":
+                emit = $"Number.isNaN({arg})";
+                return true;
+            case "IsFinite":
+                emit = $"Number.isFinite({arg})";
+                return true;
+            case "IsInfinity":
+                // True for ±Infinity, false for NaN — matches C#. The dual
+                // !isFinite + !isNaN form gets that without re-emitting the
+                // argument three times for the ±-comparison alternative.
+                emit = $"(!Number.isFinite({arg}) && !Number.isNaN({arg}))";
+                return true;
+            case "IsPositiveInfinity":
+                emit = $"({arg} === Number.POSITIVE_INFINITY)";
+                return true;
+            case "IsNegativeInfinity":
+                emit = $"({arg} === Number.NEGATIVE_INFINITY)";
+                return true;
+        }
+        return false;
     }
 
     static bool IsTranspileMethodSymbol(IMethodSymbol method)
