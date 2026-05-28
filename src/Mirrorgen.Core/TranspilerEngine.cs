@@ -1154,6 +1154,14 @@ public static class TranspilerEngine
             {
                 return $"Record<{MapType(args[0], ctx)}, {MapType(args[1], ctx)}>";
             }
+            if (genericName is "HashSet" or "ISet" or "IReadOnlySet" && args.Count == 1)
+            {
+                return $"Set<{MapType(args[0], ctx)}>";
+            }
+            if (genericName is "IEnumerator" or "IterableIterator" && args.Count == 1)
+            {
+                return $"IterableIterator<{MapType(args[0], ctx)}>";
+            }
             throw new NotSupportedException($"Unsupported generic type: {type}");
         }
 
@@ -2120,6 +2128,26 @@ public static class TranspilerEngine
                 return EmitInterpolatedString(interp, ctx);
             case TupleExpressionSyntax tupleExpr:
                 return EmitTupleExpression(tupleExpr, ctx);
+            case IsPatternExpressionSyntax isPat:
+                {
+                    // `x is null` / `x is not null` — emit `=== null` / `!== null`.
+                    // Other pattern shapes (type tests, var, recursive) stay rejected.
+                    var operand = EmitExpression(isPat.Expression, ctx);
+                    switch (isPat.Pattern)
+                    {
+                        case ConstantPatternSyntax cp when cp.Expression is LiteralExpressionSyntax cpLit
+                            && cpLit.Token.IsKind(SyntaxKind.NullKeyword):
+                            return $"{operand} === null";
+                        case UnaryPatternSyntax up when up.OperatorToken.IsKind(SyntaxKind.NotKeyword)
+                            && up.Pattern is ConstantPatternSyntax ucp
+                            && ucp.Expression is LiteralExpressionSyntax ucpLit
+                            && ucpLit.Token.IsKind(SyntaxKind.NullKeyword):
+                            return $"{operand} !== null";
+                        default:
+                            throw new NotSupportedException(
+                                $"Pattern '{isPat.Pattern.Kind()}' is not supported. Only `is null` / `is not null` patterns are accepted.");
+                    }
+                }
             case ThrowExpressionSyntax thrExpr:
                 {
                     // `_ => throw new Foo(...)` inside a switch expression. JS
@@ -2198,7 +2226,9 @@ public static class TranspilerEngine
         var rhs = EmitExpression(assign.Right, ctx);
         var tupleType = ctx.TypeOf(assign.Right) as INamedTypeSymbol;
         var sb = new StringBuilder();
-        sb.Append(indent).Append("const ");
+        // C# `var (x, y) = …` creates mutable locals — emit `let` so later
+        // reassignments like `x = WrapX(x)` round-trip.
+        sb.Append(indent).Append("let ");
         if (tupleType is { IsTupleType: true } && HasNamedTupleElements(tupleType, locals.Count))
         {
             sb.Append("{ ");
