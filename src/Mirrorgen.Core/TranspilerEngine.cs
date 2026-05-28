@@ -757,15 +757,17 @@ public static class TranspilerEngine
     static string EmitTypeDeclaration(TypeDeclarationSyntax decl, EmitContext ctx)
     {
         // Auto-detect instance-class vs data-shape (interface) emit based on
-        // structure. A class declaration that has *behavior* — an explicit
-        // constructor with a body, an instance method, or an expression-bodied
-        // (computed) property — emits as a TS class. A class with only
-        // auto-properties / fields / static members emits as the data-shape
-        // interface (matches the legacy TsGen DTO convention). Records and
-        // structs always fall through to the interface path.
-        if (decl is ClassDeclarationSyntax cls && HasInstanceClassShape(cls))
+        // structure. A class or record-class declaration that carries
+        // *behavior* — an explicit constructor with a body, an instance
+        // method, or an expression-bodied (computed) property — emits as a
+        // TS class. Plain declarations with only auto-properties / fields /
+        // static members emit as the data-shape interface (matches the
+        // legacy TsGen DTO convention). Record structs and bare structs
+        // are value-type wire DTOs and always stay on the interface path.
+        var isRecordClass = decl is RecordDeclarationSyntax rd && !rd.IsKind(SyntaxKind.RecordStructDeclaration);
+        if ((decl is ClassDeclarationSyntax || isRecordClass) && HasInstanceClassShape(decl))
         {
-            return EmitInstanceClass(cls, ctx);
+            return EmitInstanceClass(decl, ctx);
         }
 
         var name = ReadEmitName(decl.AttributeLists) ?? decl.Identifier.Text;
@@ -2342,8 +2344,13 @@ public static class TranspilerEngine
         // on the symbol's declaration syntaxes.
         foreach (var sref in type.DeclaringSyntaxReferences)
         {
-            if (sref.GetSyntax() is not ClassDeclarationSyntax cls) continue;
-            if (HasInstanceClassShape(cls)) return true;
+            if (sref.GetSyntax() is not TypeDeclarationSyntax tds) continue;
+            if (tds is not ClassDeclarationSyntax)
+            {
+                if (tds is not RecordDeclarationSyntax rd) continue;
+                if (rd.IsKind(SyntaxKind.RecordStructDeclaration)) continue;
+            }
+            if (HasInstanceClassShape(tds)) return true;
         }
         return false;
     }
@@ -3447,13 +3454,18 @@ public static class TranspilerEngine
         }
     }
 
-    static bool HasInstanceClassShape(ClassDeclarationSyntax decl)
+    static bool HasInstanceClassShape(TypeDeclarationSyntax decl)
     {
-        // Look across all partial declarations for the class — Roslyn may
+        // Look across all partial declarations for the type — Roslyn may
         // surface methods/ctors on a different partial half than the [Transpile]
         // attribute. We don't have the semantic symbol here yet, so just inspect
         // the syntax tree of this declaration; cross-partial cases are handled
         // upstream by the time we reach EmitInstanceClass.
+        //
+        // Records are class-shape only when they carry behaviour in addition
+        // to the positional params — a method, computed property, or an
+        // explicit constructor body. A bare `record Foo(int X)` stays in the
+        // data-shape interface path.
         foreach (var member in decl.Members)
         {
             switch (member)
@@ -3469,10 +3481,11 @@ public static class TranspilerEngine
         return false;
     }
 
-    static string EmitInstanceClass(ClassDeclarationSyntax decl, EmitContext ctx)
+    static string EmitInstanceClass(TypeDeclarationSyntax decl, EmitContext ctx)
     {
         var name = ReadEmitName(decl.AttributeLists) ?? decl.Identifier.Text;
         var symbol = ctx.DeclaredTypeSymbol(decl);
+        var recordPositional = (decl as RecordDeclarationSyntax)?.ParameterList;
 
         using var _scope = ctx.PushInstanceClassScope(symbol);
 
@@ -3566,6 +3579,19 @@ public static class TranspilerEngine
         // properties (expression-bodied get-only) are not storage; they
         // emit as getters in pass 3.
         var hadFieldOrProp = false;
+        var positionalNames = new HashSet<string>(StringComparer.Ordinal);
+        if (recordPositional is not null)
+        {
+            foreach (var p in recordPositional.Parameters)
+            {
+                if (p.Type is null) continue;
+                var paramName = p.Identifier.Text;
+                positionalNames.Add(paramName);
+                sb.Append(bodyIndent).Append("readonly ").Append(paramName)
+                  .Append(": ").Append(MapType(p.Type, ctx)).AppendLine(";");
+                hadFieldOrProp = true;
+            }
+        }
         foreach (var member in decl.Members)
         {
             if (member is PropertyDeclarationSyntax prop)
@@ -3639,6 +3665,25 @@ public static class TranspilerEngine
                     if (TargetsHiddenField(stmt, hiddenFieldNames)) continue;
                     sb.Append(EmitStatement(stmt, ctx, bodyIndent2));
                 }
+            }
+            sb.Append(bodyIndent).AppendLine("}");
+            anyBodyContent = true;
+        }
+        else if (recordPositional is not null)
+        {
+            // Synthesize the record's positional constructor — params become
+            // the public readonly auto-properties emitted in pass 1, so we
+            // just assign each parameter to `this.<name>` (PascalCase, since
+            // record positional names are public property names).
+            if (anyBodyContent) sb.AppendLine();
+            sb.Append(bodyIndent).Append("constructor(")
+              .Append(EmitParameterList(recordPositional.Parameters, ctx))
+              .AppendLine(") {");
+            foreach (var p in recordPositional.Parameters)
+            {
+                var paramName = p.Identifier.Text;
+                sb.Append(bodyIndent2).Append("this.").Append(paramName)
+                  .Append(" = ").Append(paramName).AppendLine(";");
             }
             sb.Append(bodyIndent).AppendLine("}");
             anyBodyContent = true;
