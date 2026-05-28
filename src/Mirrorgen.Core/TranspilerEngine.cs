@@ -1291,6 +1291,19 @@ public static class TranspilerEngine
             {
                 return $"Record<{MapTypeSymbol(named.TypeArguments[0], ctx)}, {MapTypeSymbol(named.TypeArguments[1], ctx)}>";
             }
+            if (named.TypeArguments.Length == 1 &&
+                def is "System.Collections.Generic.HashSet<T>"
+                    or "System.Collections.Generic.ISet<T>"
+                    or "System.Collections.Generic.IReadOnlySet<T>")
+            {
+                return $"Set<{MapTypeSymbol(named.TypeArguments[0], ctx)}>";
+            }
+            if (named.TypeArguments.Length == 1 &&
+                def is "System.Collections.Generic.IEnumerable<T>"
+                    or "System.Collections.Generic.IEnumerator<T>")
+            {
+                return $"IterableIterator<{MapTypeSymbol(named.TypeArguments[0], ctx)}>";
+            }
         }
 
         if (ctx.Registry.Count > 0 && ctx.Registry.TryGet(type.ToDisplayString(), out var mapping))
