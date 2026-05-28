@@ -2324,9 +2324,15 @@ public static class TranspilerEngine
             return true;
         }
 
-        var paramNames = GetPositionalRecordParamNames(named);
-        if (paramNames is null) return false;
         var recArgs = oce.ArgumentList.Arguments;
+        // Records use positional param names; non-record structs with an
+        // explicit ctor that mirrors auto-properties (e.g. `readonly struct
+        // EdgeTransform(WorldPoint translation, Quaternion rotation)` matched
+        // by `Translation` / `Rotation` props) use the property-name fallback
+        // so `new EdgeTransform(t, r)` lands as `{ Translation: t, Rotation: r }`.
+        var paramNames = GetPositionalRecordParamNames(named)
+            ?? GetCtorParamPropertyNames(named, recArgs.Count);
+        if (paramNames is null) return false;
         if (paramNames.Count != recArgs.Count) return false;
         var recParts = new List<string>(recArgs.Count);
         for (int i = 0; i < recArgs.Count; i++)
