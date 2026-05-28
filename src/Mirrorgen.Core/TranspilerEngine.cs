@@ -2945,6 +2945,18 @@ public static class TranspilerEngine
             }
         }
 
+        // Instance method called on an explicit receiver — `parameters.Validate()`,
+        // `cell.Equals(other)` etc. The default emit must carry the receiver
+        // through so the method call still resolves on the TS side. Skip the
+        // BCL helpers that are handled by the Math / Set / List / Dict mappers
+        // above (they return earlier on success). Also skip cases where the
+        // receiver is the implicit `this`, since `this.X()` is fine.
+        if (!target.IsStatic && inv.Expression is MemberAccessExpressionSyntax memberAccess)
+        {
+            var receiver = EmitExpression(memberAccess.Expression, ctx);
+            return $"{receiver}.{target.Name}({args})";
+        }
+
         return $"{target.Name}({args})";
     }
 
@@ -3069,18 +3081,40 @@ public static class TranspilerEngine
 
     static List<string> CollectRecordStructInstanceFieldNames(INamedTypeSymbol type)
     {
-        // Record struct fields come from positional parameters (surfaced as
-        // properties on the type symbol). We use the property-list snapshot
-        // since the record's primary ctor synthesizes one property per
-        // positional param and the walker also emits them that way. Skip
-        // static, indexer, and explicitly-implemented members.
+        // C# value equality on records compares the *storage fields*, not the
+        // derived computed properties. For a record struct the storage names
+        // are exactly the positional parameter names; we read them from
+        // DeclaringSyntaxReferences so additional computed properties
+        // declared in the body (e.g. `IsPlanar`, `IsInvalid`) aren't folded
+        // into the equality test. Falls back to public instance auto-
+        // properties when no positional declaration is found.
         var names = new List<string>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var sref in type.DeclaringSyntaxReferences)
+        {
+            if (sref.GetSyntax() is not RecordDeclarationSyntax rd) continue;
+            if (rd.ParameterList is not { } pl) continue;
+            foreach (var p in pl.Parameters)
+            {
+                var n = p.Identifier.Text;
+                if (!seen.Add(n)) continue;
+                names.Add(n);
+            }
+        }
+        if (names.Count > 0) return names;
         foreach (var member in type.GetMembers())
         {
             if (member is not IPropertySymbol prop) continue;
             if (prop.IsStatic || prop.IsIndexer) continue;
             if (prop.DeclaredAccessibility != Accessibility.Public) continue;
+            // Skip computed (expression-bodied or get-with-body) properties —
+            // they aren't storage so they shouldn't participate in equality.
+            if (prop.DeclaringSyntaxReferences.Length > 0 &&
+                prop.DeclaringSyntaxReferences[0].GetSyntax() is PropertyDeclarationSyntax pds &&
+                IsComputedProperty(pds))
+            {
+                continue;
+            }
             if (!seen.Add(prop.Name)) continue;
             names.Add(prop.Name);
         }
