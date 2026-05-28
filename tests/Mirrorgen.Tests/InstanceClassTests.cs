@@ -285,4 +285,46 @@ public class InstanceClassTests
         Assert.DoesNotContain("implements IUnmirrored", ts);
         Assert.Contains("export class Thing {", ts);
     }
+
+    [Fact]
+    public void Record_Class_With_Instance_Method_Emits_As_TS_Class()
+    {
+        // Record CLASS (not record struct) with an instance method or
+        // computed property becomes a TS class — positional params land as
+        // readonly auto-properties, the ctor body is synthesized, and the
+        // instance method emits next to them.
+        var ts = TranspilerEngine.TranspileSource("""
+            [Mirrorgen.Transpile]
+            public sealed record Params(double Radius, int Level)
+            {
+                public int CellCount => Level * Level;
+                public void Validate()
+                {
+                    if (Radius <= 0) throw new System.ArgumentOutOfRangeException(nameof(Radius));
+                }
+            }
+            """);
+        Assert.Contains("export class Params {", ts);
+        Assert.Contains("readonly Radius: number;", ts);
+        Assert.Contains("readonly Level: number;", ts);
+        Assert.Contains("constructor(Radius: number, Level: number)", ts);
+        Assert.Contains("this.Radius = Radius;", ts);
+        Assert.Contains("this.Level = Level;", ts);
+        Assert.Contains("get CellCount(): number", ts);
+        Assert.Contains("Validate()", ts);
+    }
+
+    [Fact]
+    public void Bare_Record_Class_Stays_Interface()
+    {
+        // No instance behaviour → record class still emits as interface (the
+        // common DTO case). The class-emit gate is structural, not [Transpile]-
+        // wide.
+        var ts = TranspilerEngine.TranspileSource("""
+            [Mirrorgen.Transpile]
+            public sealed record Dto(int A, string B);
+            """);
+        Assert.Contains("export interface Dto", ts);
+        Assert.DoesNotContain("export class Dto", ts);
+    }
 }
