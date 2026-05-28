@@ -198,25 +198,37 @@ public static class BatchTranspiler
         return trimmed.StartsWith(prefix, System.StringComparison.Ordinal);
     }
 
-    // Splits a Mirrorgen-emitted .ts into top-level blocks separated by blank
-    // lines. Multi-line declarations (interfaces / functions) stay intact
-    // because their inner lines are non-empty.
+    // Splits a Mirrorgen-emitted .ts into top-level blocks. A block is a
+    // contiguous run terminated by a blank line at brace-depth 0; class
+    // bodies (which include blank lines between members) stay intact because
+    // their internal blank lines fall inside `{...}`.
     static IEnumerable<string> SplitTopLevelBlocks(string text)
     {
         var sb = new StringBuilder();
+        int depth = 0;
         foreach (var rawLine in text.Split('\n'))
         {
             var line = rawLine.TrimEnd('\r');
             if (line.Length == 0)
             {
-                if (sb.Length > 0)
+                if (depth == 0)
                 {
-                    yield return sb.ToString();
-                    sb.Clear();
+                    if (sb.Length > 0)
+                    {
+                        yield return sb.ToString();
+                        sb.Clear();
+                    }
+                    continue;
                 }
+                sb.Append('\n');
                 continue;
             }
             sb.Append(line).Append('\n');
+            foreach (var ch in line)
+            {
+                if (ch == '{') depth++;
+                else if (ch == '}') depth = System.Math.Max(0, depth - 1);
+            }
         }
         if (sb.Length > 0) yield return sb.ToString();
     }
