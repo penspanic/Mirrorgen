@@ -315,6 +315,31 @@ public class InstanceClassTests
     }
 
     [Fact]
+    public void Record_Struct_Equals_Emits_FieldWise_Comparison()
+    {
+        // C# auto-generates value equality on record struct; TS interface
+        // emit has no structural compare, so `a.Equals(b)` and `a == b`
+        // must expand into a field-by-field `===` join. Otherwise the
+        // emitted `a === b` is reference equality and never matches for
+        // two BigInt-bearing object literals.
+        var ts = TranspilerEngine.TranspileSource("""
+            [Mirrorgen.Transpile]
+            public readonly record struct Cell(ulong High, ulong Low);
+
+            public static class S {
+                [Mirrorgen.Transpile]
+                public static bool SameEq(Cell a, Cell b) => a.Equals(b);
+                [Mirrorgen.Transpile]
+                public static bool SameOp(Cell a, Cell b) => a == b;
+                [Mirrorgen.Transpile]
+                public static bool DiffOp(Cell a, Cell b) => a != b;
+            }
+            """);
+        Assert.Contains("a.High === b.High && a.Low === b.Low", ts);
+        Assert.Contains("a.High !== b.High || a.Low !== b.Low", ts);
+    }
+
+    [Fact]
     public void Bare_Record_Class_Stays_Interface()
     {
         // No instance behaviour → record class still emits as interface (the
