@@ -2352,6 +2352,17 @@ public static class TranspilerEngine
                     }
                 }
             }
+            // Bare const-field reference inside a method body — inline the
+            // literal value. Avoids declaring a TS-side const that collides
+            // with same-named consts on sibling [Transpile] types
+            // (e.g. PlanarGridLayout.EdgeN = 2 vs CubeEdgeAdjacency.EdgeN = 1).
+            if (field.IsConst
+                && field.ContainingType?.TypeKind != TypeKind.Enum
+                && ctx.TryGetConstantValue(id, out var constValue)
+                && TryFormatTsLiteral(constValue, out var literal))
+            {
+                return literal;
+            }
         }
         // Instance-class member auto-prefix: when emitting inside `class Foo`
         // (Shape = Class) and the identifier resolves to a non-static
