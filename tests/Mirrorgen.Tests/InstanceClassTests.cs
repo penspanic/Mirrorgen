@@ -3,29 +3,31 @@ using Xunit;
 
 namespace Mirrorgen.Tests;
 
-// Instance class emit (Shape = Class) — distinct from the default Shape = Interface
-// path which folds everything into a data-only `export interface`. Class shape
-// turns auto-properties into readonly fields, constructors into ctor bodies,
-// instance methods into class methods, and expression-bodied get-only
-// properties into getters.
+// Instance class emit — the walker auto-detects a class declaration with
+// instance behavior (explicit ctor body, instance method, or expression-bodied
+// property) and emits a TS class. Pure data-shape classes (auto-properties or
+// fields only) keep the legacy interface emit. Records and structs always
+// emit as interfaces.
 public class InstanceClassTests
 {
     [Fact]
-    public void Empty_Class_Emits_Empty_Class()
+    public void Empty_Class_Emits_Empty_Interface()
     {
+        // No instance behavior → auto-detect lands on the data-shape path.
+        // Empty class has no members to differentiate it from an interface
+        // anyway, so the interface form is the right emit.
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Transpile(Shape = Mirrorgen.TranspileShape.Class)]
+            [Mirrorgen.Transpile]
             public class Empty { }
             """);
-        Assert.Contains("export class Empty {", ts);
-        Assert.DoesNotContain("export interface Empty", ts);
+        Assert.Contains("export interface Empty {", ts);
     }
 
     [Fact]
     public void AutoProperty_Becomes_Readonly_Field()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Transpile(Shape = Mirrorgen.TranspileShape.Class)]
+            [Mirrorgen.Transpile]
             public class Point
             {
                 public int X { get; }
@@ -50,7 +52,7 @@ public class InstanceClassTests
     public void Computed_Property_Becomes_Getter()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Transpile(Shape = Mirrorgen.TranspileShape.Class)]
+            [Mirrorgen.Transpile]
             public class Tag
             {
                 public string Kind => "planar";
@@ -64,7 +66,7 @@ public class InstanceClassTests
     public void Instance_Method_Emits_Class_Method_With_This_Binding()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Transpile(Shape = Mirrorgen.TranspileShape.Class)]
+            [Mirrorgen.Transpile]
             public class Counter
             {
                 public int Value { get; }
@@ -86,7 +88,7 @@ public class InstanceClassTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             using System;
-            [Mirrorgen.Transpile(Shape = Mirrorgen.TranspileShape.Class)]
+            [Mirrorgen.Transpile]
             public class Pos
             {
                 public int X { get; }
@@ -107,7 +109,7 @@ public class InstanceClassTests
     public void Default_Parameters_Emit_With_Equals_Default()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Transpile(Shape = Mirrorgen.TranspileShape.Class)]
+            [Mirrorgen.Transpile]
             public class Offset
             {
                 public int X { get; }
@@ -127,7 +129,7 @@ public class InstanceClassTests
     public void Static_Method_On_Instance_Class_Emits_Static_Method()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Transpile(Shape = Mirrorgen.TranspileShape.Class)]
+            [Mirrorgen.Transpile]
             public class Foo
             {
                 public int X { get; }
@@ -145,7 +147,7 @@ public class InstanceClassTests
     public void Private_Field_Initialized_From_Constructor_Body()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Transpile(Shape = Mirrorgen.TranspileShape.Class)]
+            [Mirrorgen.Transpile]
             public class Half
             {
                 public double Size { get; }
@@ -164,7 +166,7 @@ public class InstanceClassTests
     }
 
     [Fact]
-    public void Default_Shape_Still_Emits_Interface()
+    public void Data_Only_Class_Still_Emits_Interface()
     {
         var ts = TranspilerEngine.TranspileSource("""
             [Mirrorgen.Transpile]
@@ -187,7 +189,7 @@ public class InstanceClassTests
                 int Get();
             }
 
-            [Mirrorgen.Transpile(Shape = Mirrorgen.TranspileShape.Class)]
+            [Mirrorgen.Transpile]
             public class Thing : IThing
             {
                 public int Value { get; }
@@ -203,7 +205,7 @@ public class InstanceClassTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             using System.Collections.Generic;
-            [Mirrorgen.Transpile(Shape = Mirrorgen.TranspileShape.Class)]
+            [Mirrorgen.Transpile]
             public class Range
             {
                 public int Start { get; }
@@ -228,7 +230,7 @@ public class InstanceClassTests
     public void NoTranspile_Method_Is_Skipped()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Transpile(Shape = Mirrorgen.TranspileShape.Class)]
+            [Mirrorgen.Transpile]
             public class Surface
             {
                 public int X { get; }
@@ -248,7 +250,7 @@ public class InstanceClassTests
     public void Out_Param_In_Instance_Method_Emits_Tuple_Return()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Transpile(Shape = Mirrorgen.TranspileShape.Class)]
+            [Mirrorgen.Transpile]
             public class Lookup
             {
                 public int Value { get; }
@@ -272,7 +274,7 @@ public class InstanceClassTests
         var ts = TranspilerEngine.TranspileSource("""
             public interface IUnmirrored { }
 
-            [Mirrorgen.Transpile(Shape = Mirrorgen.TranspileShape.Class)]
+            [Mirrorgen.Transpile]
             public class Thing : IUnmirrored
             {
                 public int X { get; }

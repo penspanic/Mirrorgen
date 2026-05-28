@@ -752,11 +752,14 @@ public static class TranspilerEngine
 
     static string EmitTypeDeclaration(TypeDeclarationSyntax decl, EmitContext ctx)
     {
-        // Shape = Class opt-in routes class declarations through the instance
-        // class emit path. Records / structs still fall through to the
-        // data-shape (interface) emit below — those have first-class native
-        // emit conventions and don't need the class machinery.
-        if (decl is ClassDeclarationSyntax cls && ReadShape(decl.AttributeLists) == TranspileShape.Class)
+        // Auto-detect instance-class vs data-shape (interface) emit based on
+        // structure. A class declaration that has *behavior* — an explicit
+        // constructor with a body, an instance method, or an expression-bodied
+        // (computed) property — emits as a TS class. A class with only
+        // auto-properties / fields / static members emits as the data-shape
+        // interface (matches the legacy TsGen DTO convention). Records and
+        // structs always fall through to the interface path.
+        if (decl is ClassDeclarationSyntax cls && HasInstanceClassShape(cls))
         {
             return EmitInstanceClass(cls, ctx);
         }
@@ -2187,11 +2190,10 @@ public static class TranspilerEngine
 
         if (!IsTranspileType(named)) return false;
 
-        // [Transpile(Shape = Class)] types emit as TS classes; `new T(args)`
-        // stays as-is on the TS side (the emitted class' constructor accepts
-        // the same positional args). The default Shape = Interface path
-        // expects a positional record and folds args into an object literal.
-        if (IsTranspileClassShape(named))
+        // Class-shape types (those with instance behavior) emit as TS classes;
+        // `new T(args)` stays as-is. Data-shape types (record / DTO) fold args
+        // into an object literal. Detect class shape from the declaration syntax.
+        if (IsClassShapeFromSymbol(named))
         {
             var args = oce.ArgumentList.Arguments;
             var parts = new List<string>(args.Count);
@@ -2216,17 +2218,15 @@ public static class TranspilerEngine
         return true;
     }
 
-    static bool IsTranspileClassShape(INamedTypeSymbol type)
+    static bool IsClassShapeFromSymbol(INamedTypeSymbol type)
     {
-        foreach (var attr in type.GetAttributes())
+        // Walk every syntax reference (covers partials) looking for instance
+        // behavior — same heuristic as HasInstanceClassShape, but operating
+        // on the symbol's declaration syntaxes.
+        foreach (var sref in type.DeclaringSyntaxReferences)
         {
-            if (attr.AttributeClass?.ToDisplayString() != "Mirrorgen.TranspileAttribute") continue;
-            foreach (var kv in attr.NamedArguments)
-            {
-                if (kv.Key != "Shape") continue;
-                // Named arg value for an enum surfaces as the underlying integer.
-                if (kv.Value.Value is int iv && iv == (int)TranspileShape.Class) return true;
-            }
+            if (sref.GetSyntax() is not ClassDeclarationSyntax cls) continue;
+            if (HasInstanceClassShape(cls)) return true;
         }
         return false;
     }
@@ -3212,29 +3212,26 @@ public static class TranspilerEngine
         }
     }
 
-    static TranspileShape ReadShape(SyntaxList<AttributeListSyntax> attributeLists)
+    static bool HasInstanceClassShape(ClassDeclarationSyntax decl)
     {
-        foreach (var list in attributeLists)
+        // Look across all partial declarations for the class — Roslyn may
+        // surface methods/ctors on a different partial half than the [Transpile]
+        // attribute. We don't have the semantic symbol here yet, so just inspect
+        // the syntax tree of this declaration; cross-partial cases are handled
+        // upstream by the time we reach EmitInstanceClass.
+        foreach (var member in decl.Members)
         {
-            foreach (var attr in list.Attributes)
+            switch (member)
             {
-                if (!IsTranspileAttributeSyntax(attr)) continue;
-                if (attr.ArgumentList is null) continue;
-                foreach (var arg in attr.ArgumentList.Arguments)
-                {
-                    if (arg.NameEquals?.Name.Identifier.Text != "Shape") continue;
-                    // Attribute argument is a member-access like
-                    // `Mirrorgen.TranspileShape.Class` or `TranspileShape.Class`.
-                    // We just need the trailing member name to disambiguate.
-                    var text = arg.Expression.ToString();
-                    var lastDot = text.LastIndexOf('.');
-                    var member = lastDot >= 0 ? text[(lastDot + 1)..] : text;
-                    if (member == "Class") return TranspileShape.Class;
-                    if (member == "Interface") return TranspileShape.Interface;
-                }
+                case ConstructorDeclarationSyntax ctor when ctor.Body is not null:
+                    return true;
+                case MethodDeclarationSyntax m when !m.Modifiers.Any(SyntaxKind.StaticKeyword):
+                    return true;
+                case PropertyDeclarationSyntax prop when !prop.Modifiers.Any(SyntaxKind.StaticKeyword) && IsComputedProperty(prop):
+                    return true;
             }
         }
-        return TranspileShape.Interface;
+        return false;
     }
 
     static string EmitInstanceClass(ClassDeclarationSyntax decl, EmitContext ctx)
