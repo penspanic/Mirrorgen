@@ -85,4 +85,10 @@ public class OperatorTests
         Assert.Contains("return x << y;", Transpile("x << y"));
         Assert.Contains("return x >> y;", Transpile("x >> y"));
     }
+
+    [Fact]
+    public void NullCoalescing_On_Nullable_Maps_To_JS_NullishOperator() =>
+        Assert.Contains(
+            "return x ?? 0;",
+            Transpile("x ?? 0", returnType: "double", paramList: "double? x"));
 }

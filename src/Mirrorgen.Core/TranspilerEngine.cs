@@ -3607,6 +3607,11 @@ public static class TranspilerEngine
             SyntaxKind.CaretToken => "^",
             SyntaxKind.LessThanLessThanToken => "<<",
             SyntaxKind.GreaterThanGreaterThanToken => ">>",
+            // `a ?? b` — JS ES2020 nullish coalescing. Matches C# semantics on
+            // null / undefined receivers. C# nullable structs lower to `null`
+            // on the JS side, so the operator behaves identically for the
+            // T? Nullable<T> shape too.
+            SyntaxKind.QuestionQuestionToken => "??",
             _ => throw new NotSupportedException($"Unsupported binary operator: {op.Kind()}"),
         };
     }
