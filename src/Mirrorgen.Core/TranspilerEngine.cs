@@ -3517,6 +3517,24 @@ public static class TranspilerEngine
             return eqBinary;
         }
 
+        // Null comparisons on nullable types — `x != null` / `x == null` —
+        // need loose equality on the JS side. Strict `!==` would let an
+        // `undefined` (which arises whenever the field is declared with
+        // optional `?:` marker, i.e. C# nullable param with default) slip
+        // through and break narrowing in the consuming code.
+        if (binKind == SyntaxKind.EqualsEqualsToken || binKind == SyntaxKind.ExclamationEqualsToken)
+        {
+            var jsOp = binKind == SyntaxKind.EqualsEqualsToken ? "==" : "!=";
+            if (IsNullLiteral(bin.Right) && IsNullableOperand(bin.Left, ctx))
+            {
+                return $"{EmitExpression(bin.Left, ctx)} {jsOp} null";
+            }
+            if (IsNullLiteral(bin.Left) && IsNullableOperand(bin.Right, ctx))
+            {
+                return $"null {jsOp} {EmitExpression(bin.Right, ctx)}";
+            }
+        }
+
         var left = EmitExpression(bin.Left, ctx);
         var right = EmitExpression(bin.Right, ctx);
 
@@ -3610,6 +3628,23 @@ public static class TranspilerEngine
             return false;
         }
         return ctx.TypeOf(bin)?.SpecialType == SpecialType.System_Int32;
+    }
+
+    static bool IsNullLiteral(ExpressionSyntax expr) =>
+        expr is LiteralExpressionSyntax lit && lit.Token.IsKind(SyntaxKind.NullKeyword);
+
+    static bool IsNullableOperand(ExpressionSyntax expr, EmitContext ctx)
+    {
+        var type = ctx.TypeOf(expr);
+        if (type is null) return false;
+        // Nullable<T> on the C# side; reference types are nullable too and
+        // C# `== null` already means JS `== null` for them.
+        if (type is INamedTypeSymbol named
+            && named.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+        {
+            return true;
+        }
+        return type.IsReferenceType;
     }
 
     static string MapBinaryOperator(SyntaxToken op)
@@ -3734,7 +3769,11 @@ public static class TranspilerEngine
         // creations, collection literals) emit at module scope so callsites
         // inside the class body can resolve them as bare identifiers. Const
         // refs in method bodies inline directly (see ResolveIdentifierEmit),
-        // so plain `public const` fields here are intentionally skipped.
+        // so plain `public const` fields here are intentionally skipped. The
+        // const block emits *after* the class so e.g. `export const Instance =
+        // new T()` doesn't trip TS's no-use-before-declaration rule on the
+        // class identifier.
+        var staticFold = new StringBuilder();
         foreach (var member in decl.Members)
         {
             if (member is not FieldDeclarationSyntax field) continue;
@@ -3763,12 +3802,17 @@ public static class TranspilerEngine
                 var tsType = MapType(field.Declaration.Type, ctx);
                 var isPublic = field.Modifiers.Any(SyntaxKind.PublicKeyword);
                 var keyword = isPublic ? "export const " : "const ";
-                sb.Append(keyword).Append(v.Identifier.Text)
+                staticFold.Append(keyword).Append(v.Identifier.Text)
                   .Append(": ").Append(tsType)
                   .Append(" = ").Append(initEmit).AppendLine(";");
+                // Separate consecutive const declarations with a blank line so
+                // the aggregator's block-splitter (which yields on blank lines)
+                // treats each `const X = …;` as its own top-level export. Without
+                // this, every const after the first gets dedupe-folded into the
+                // first one's block and silently dropped at aggregate time.
+                staticFold.AppendLine();
             }
         }
-        if (sb.Length > 0) sb.AppendLine();
 
         sb.Append("export class ").Append(name);
 
@@ -4040,6 +4084,11 @@ public static class TranspilerEngine
         }
 
         sb.AppendLine("}");
+        if (staticFold.Length > 0)
+        {
+            sb.AppendLine();
+            sb.Append(staticFold);
+        }
         return sb.ToString();
     }
 
