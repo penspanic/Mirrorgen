@@ -176,6 +176,7 @@ public static class TranspilerEngine
                 {
                     foreach (var memberMethod in tds.Members.OfType<MethodDeclarationSyntax>())
                     {
+                        if (HasNoTranspileAttribute(memberMethod.AttributeLists)) continue;
                         if (IsPublicStaticMethod(memberMethod) && emit.Add(memberMethod))
                             queue.Enqueue(memberMethod);
                     }
