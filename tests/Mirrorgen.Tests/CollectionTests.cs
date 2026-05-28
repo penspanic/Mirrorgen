@@ -96,14 +96,27 @@ public class CollectionTests
     }
 
     [Fact]
+    public void HashSet_Field_Emits_As_TS_Set()
+    {
+        var ts = TranspilerEngine.TranspileSource("""
+            using System.Collections.Generic;
+
+            [Mirrorgen.Attributes.Transpile]
+            public record Bag(HashSet<int> Items);
+            """);
+        Assert.Contains("Items: Set<number>;", ts);
+    }
+
+    [Fact]
     public void Unsupported_Generic_Throws()
     {
+        // Linked-list style generics still have no TS mirror.
         Assert.Throws<NotSupportedException>(() =>
             TranspilerEngine.TranspileSource("""
                 using System.Collections.Generic;
 
                 [Mirrorgen.Attributes.Transpile]
-                public record Bad(HashSet<int> Items);
+                public record Bad(LinkedList<int> Items);
                 """));
     }
 }

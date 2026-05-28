@@ -21,7 +21,7 @@ public class TupleDeconstructionTests
                 }
             }
             """);
-        Assert.Contains("const { X: x, Y: y } = Pair();", ts);
+        Assert.Contains("let { X: x, Y: y } = Pair();", ts);
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public class TupleDeconstructionTests
                 }
             }
             """);
-        Assert.Contains("const { X, Y } = Pair();", ts);
+        Assert.Contains("let { X, Y } = Pair();", ts);
     }
 
     [Fact]
@@ -59,6 +59,6 @@ public class TupleDeconstructionTests
                 }
             }
             """);
-        Assert.Contains("const [x, y] = Pair();", ts);
+        Assert.Contains("let [x, y] = Pair();", ts);
     }
 }

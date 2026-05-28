@@ -69,21 +69,21 @@ public class LoopTests
     }
 
     [Fact]
-    public void ForEach_Over_Unsupported_Collection_Throws()
+    public void ForEach_Over_HashSet_Emits_For_Of()
     {
-        Assert.Throws<NotSupportedException>(() =>
-            TranspilerEngine.TranspileSource("""
-                using System.Collections.Generic;
+        var ts = TranspilerEngine.TranspileSource("""
+            using System.Collections.Generic;
 
-                public static class S {
-                    [Mirrorgen.Attributes.Transpile]
-                    public static int Count(HashSet<int> set) {
-                        int n = 0;
-                        foreach (var x in set) n++;
-                        return n;
-                    }
+            public static class S {
+                [Mirrorgen.Attributes.Transpile]
+                public static int Count(HashSet<int> set) {
+                    int n = 0;
+                    foreach (var x in set) n++;
+                    return n;
                 }
-                """));
+            }
+            """);
+        Assert.Contains("for (const x of set) {", ts);
     }
 
     [Fact]
