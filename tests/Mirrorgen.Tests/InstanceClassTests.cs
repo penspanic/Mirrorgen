@@ -199,6 +199,54 @@ public class InstanceClassTests
     }
 
     [Fact]
+    public void Iterator_Method_Emits_Generator_With_Yield()
+    {
+        var ts = TranspilerEngine.TranspileSource("""
+            using System.Collections.Generic;
+            [Mirrorgen.Transpile(Shape = Mirrorgen.TranspileShape.Class)]
+            public class Range
+            {
+                public int Start { get; }
+                public int End { get; }
+
+                public Range(int start, int end) { Start = start; End = end; }
+
+                public IEnumerable<int> Values()
+                {
+                    if (End < Start) yield break;
+                    for (int i = Start; i < End; i++)
+                        yield return i;
+                }
+            }
+            """);
+        Assert.Contains("*Values(): IterableIterator<number> {", ts);
+        Assert.Contains("yield i;", ts);
+        Assert.Contains("return;", ts);
+    }
+
+    [Fact]
+    public void Out_Param_In_Instance_Method_Emits_Tuple_Return()
+    {
+        var ts = TranspilerEngine.TranspileSource("""
+            [Mirrorgen.Transpile(Shape = Mirrorgen.TranspileShape.Class)]
+            public class Lookup
+            {
+                public int Value { get; }
+                public Lookup(int v) { Value = v; }
+
+                public bool TryGet(out int result)
+                {
+                    result = Value;
+                    return true;
+                }
+            }
+            """);
+        // Out param surfaces in the return tuple along with the original
+        // return type — matches the existing free-function ref/out convention.
+        Assert.Contains("TryGet(result: number): [boolean, number] {", ts);
+    }
+
+    [Fact]
     public void Non_Transpiled_Base_Interface_Is_Dropped_From_Implements()
     {
         var ts = TranspilerEngine.TranspileSource("""

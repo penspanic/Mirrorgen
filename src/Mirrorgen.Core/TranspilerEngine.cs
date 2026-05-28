@@ -1392,6 +1392,19 @@ public static class TranspilerEngine
                 return $"{indent}continue;\n";
             case ThrowStatementSyntax thr:
                 return EmitThrow(thr, ctx, indent);
+            case YieldStatementSyntax y:
+                {
+                    // `yield return X;` → `yield X;` inside a generator
+                    // function. `yield break;` → `return;` which terminates
+                    // the generator. The enclosing method must already be
+                    // declared with the leading `*` (handled where method
+                    // declarations are emitted).
+                    if (y.IsKind(SyntaxKind.YieldBreakStatement))
+                    {
+                        return $"{indent}return;\n";
+                    }
+                    return $"{indent}yield {EmitExpression(y.Expression!, ctx)};\n";
+                }
             default:
                 throw new NotSupportedException($"Unsupported statement: {stmt.Kind()}");
         }
@@ -3339,24 +3352,67 @@ public static class TranspilerEngine
                     var methodName = ReadEmitName(m.AttributeLists) ?? m.Identifier.Text;
                     var isStatic = m.Modifiers.Any(SyntaxKind.StaticKeyword);
                     var isPrivate = m.Modifiers.Any(SyntaxKind.PrivateKeyword);
+                    var isIterator = IsIteratorMethod(m);
+                    var refParams = CollectRefParams(m);
+                    var isVoid = m.ReturnType is PredefinedTypeSyntax pts2
+                        && pts2.Keyword.IsKind(SyntaxKind.VoidKeyword);
+
+                    // Iterators emit as `*foo(): IterableIterator<T> { yield … }`
+                    // — the TS class-method generator form. Out params are
+                    // not supported on iterators (C# doesn't allow it either).
                     sb.Append(bodyIndent);
                     if (isPrivate) sb.Append("private ");
                     if (isStatic) sb.Append("static ");
+                    if (isIterator) sb.Append('*');
                     sb.Append(methodName).Append('(')
                       .Append(EmitParameterList(m.ParameterList.Parameters, ctx))
-                      .Append("): ").Append(MapType(m.ReturnType, ctx)).AppendLine(" {");
+                      .Append("): ");
+                    if (isIterator)
+                    {
+                        // C# iterator return type is `IEnumerable<T>` or
+                        // `IEnumerator<T>`; both surface as the element type
+                        // wrapped in `IterableIterator<T>` on the TS side.
+                        var elemType = IteratorElementType(m, ctx);
+                        sb.Append("IterableIterator<").Append(elemType).Append('>');
+                    }
+                    else if (refParams.Count > 0)
+                    {
+                        var refTypes = refParams.ConvertAll(p => MapType(p.Type!, ctx));
+                        if (isVoid)
+                        {
+                            sb.Append(refTypes.Count == 1
+                                ? refTypes[0]
+                                : "[" + string.Join(", ", refTypes) + "]");
+                        }
+                        else
+                        {
+                            var positions = new List<string> { MapType(m.ReturnType, ctx) };
+                            positions.AddRange(refTypes);
+                            sb.Append("[").Append(string.Join(", ", positions)).Append("]");
+                        }
+                    }
+                    else
+                    {
+                        sb.Append(MapType(m.ReturnType, ctx));
+                    }
+                    sb.AppendLine(" {");
+
                     // Static methods on the instance class step out of the
                     // `this.` auto-prefix scope — `Foo.Bar()` callees should
                     // emit unqualified, and any unqualified reference must
                     // not be silently turned into `this.X`.
-                    if (isStatic)
+                    IDisposable? staticScope = isStatic ? ctx.PushInstanceClassScope(null) : null;
+                    IDisposable? refScope = refParams.Count > 0
+                        ? ctx.PushRefMethodScope(refParams.ConvertAll(p => p.Identifier.Text), isVoid)
+                        : null;
+                    try
                     {
-                        using var _staticScope = ctx.PushInstanceClassScope(null);
-                        EmitMethodBodyForClass(m, ctx, sb, bodyIndent2);
+                        EmitMethodBodyForClass(m, ctx, sb, bodyIndent2, refParams, isVoid);
                     }
-                    else
+                    finally
                     {
-                        EmitMethodBodyForClass(m, ctx, sb, bodyIndent2);
+                        refScope?.Dispose();
+                        staticScope?.Dispose();
                     }
                     sb.Append(bodyIndent).AppendLine("}");
                     anyBodyContent = true;
@@ -3400,7 +3456,8 @@ public static class TranspilerEngine
     }
 
     static void EmitMethodBodyForClass(
-        MethodDeclarationSyntax method, EmitContext ctx, StringBuilder sb, string indent)
+        MethodDeclarationSyntax method, EmitContext ctx, StringBuilder sb, string indent,
+        List<ParameterSyntax>? refParams = null, bool isVoid = false)
     {
         if (method.Body is { } body)
         {
@@ -3408,13 +3465,20 @@ public static class TranspilerEngine
             {
                 sb.Append(EmitStatement(stmt, ctx, indent));
             }
+            // Tail-append the synthetic ref-return for void methods with
+            // out params — same shape as the free-function emit path.
+            if (refParams is { Count: > 0 } && isVoid && !EndsWithReturn(body))
+            {
+                var refNames = refParams.ConvertAll(p => p.Identifier.Text);
+                sb.Append(indent).Append("return ").Append(EmitRefReturnExpression(refNames, isVoid)).AppendLine(";");
+            }
             return;
         }
         if (method.ExpressionBody is { } eb)
         {
-            var isVoid = method.ReturnType is PredefinedTypeSyntax pts
+            var bodyIsVoid = method.ReturnType is PredefinedTypeSyntax pts
                 && pts.Keyword.IsKind(SyntaxKind.VoidKeyword);
-            if (isVoid)
+            if (bodyIsVoid)
             {
                 sb.Append(indent).Append(EmitExpression(eb.Expression, ctx)).AppendLine(";");
             }
@@ -3423,6 +3487,32 @@ public static class TranspilerEngine
                 sb.Append(indent).Append("return ").Append(EmitExpression(eb.Expression, ctx)).AppendLine(";");
             }
         }
+    }
+
+    static bool IsIteratorMethod(MethodDeclarationSyntax method)
+    {
+        if (method.Body is not { } body) return false;
+        // Recursive descent through nested blocks/control flow looking for
+        // any YieldStatement. Nested lambdas / local functions inside the
+        // method body can also contain `yield` but those declare their own
+        // generator scope so we ignore them.
+        foreach (var node in body.DescendantNodes(descendIntoChildren: n =>
+            n is not LocalFunctionStatementSyntax && n is not AnonymousFunctionExpressionSyntax))
+        {
+            if (node is YieldStatementSyntax) return true;
+        }
+        return false;
+    }
+
+    static string IteratorElementType(MethodDeclarationSyntax method, EmitContext ctx)
+    {
+        // C# iterator return is IEnumerable<T> / IEnumerator<T> / IAsyncEnumerable<T>.
+        // Strip the wrapper and emit just T for the TS IterableIterator<T>.
+        if (method.ReturnType is GenericNameSyntax gn && gn.TypeArgumentList.Arguments.Count == 1)
+        {
+            return MapType(gn.TypeArgumentList.Arguments[0], ctx);
+        }
+        return "unknown";
     }
 
     static string EmitParameterList(SeparatedSyntaxList<ParameterSyntax> parameters, EmitContext ctx)
