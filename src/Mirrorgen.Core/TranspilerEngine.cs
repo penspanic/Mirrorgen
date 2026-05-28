@@ -2032,8 +2032,22 @@ public static class TranspilerEngine
                             .Select(e => EmitExpression(e, ctx));
                         return "[" + string.Join(", ", elems) + "]";
                     }
+                    // `new T[N]` — sized array allocation. TS doesn't pre-fill
+                    // with a meaningful default for arbitrary T, but the
+                    // typical C# pattern `var a = new T[N]; for (i...) a[i] = …;`
+                    // works on TS once we hand back a length-N slot. Use
+                    // `new Array<T>(N)` (subclass of Array, length N, elements
+                    // sparse until written) which is exactly that semantics.
+                    var rankSpecs = ace.Type.RankSpecifiers;
+                    if (rankSpecs.Count == 1 && rankSpecs[0].Sizes.Count == 1
+                        && rankSpecs[0].Sizes[0] is ExpressionSyntax sizeExpr
+                        && sizeExpr is not OmittedArraySizeExpressionSyntax)
+                    {
+                        var size = EmitExpression(sizeExpr, ctx);
+                        return $"new Array<{MapType(ace.Type.ElementType, ctx)}>({size})";
+                    }
                     throw new NotSupportedException(
-                        $"Unsupported array `new` expression '{ace}'. Use an initializer (`new[] {{ a, b }}`) or `new T[0]` for empty.");
+                        $"Unsupported array `new` expression '{ace}'. Use an initializer (`new[] {{ a, b }}`) or `new T[N]`.");
                 }
             case ElementAccessExpressionSyntax ea:
                 {
@@ -2685,6 +2699,13 @@ public static class TranspilerEngine
         var args = string.Join(", ",
             inv.ArgumentList.Arguments.Select(a => EmitExpression(a.Expression, ctx)));
 
+        // `Array.Empty<T>()` is a common BCL idiom for an empty
+        // read-only sequence — emit as the equivalent `[]` literal.
+        if (target.Name == "Empty" && target.ContainingType?.ToDisplayString() == "System.Array")
+        {
+            return "[]";
+        }
+
         if (TryMapMathInvocation(target, out var jsName))
         {
             var raw = $"Math.{jsName}({args})";
@@ -2729,6 +2750,20 @@ public static class TranspilerEngine
             var receiver = EmitExpression(extAccess.Expression, ctx);
             var allArgs = args.Length > 0 ? $"{receiver}, {args}" : receiver;
             return $"{target.Name}({allArgs})";
+        }
+
+        // Bare invocation inside an instance-class scope — `IsInBounds(x, y)`
+        // resolves to a method on the same class; prefix `this.` for instance
+        // methods, or the class name for sibling static methods, so TS picks
+        // them up correctly.
+        if (ctx.CurrentInstanceClass is { } encloser && inv.Expression is IdentifierNameSyntax)
+        {
+            if (target.ContainingType is { } owner &&
+                SymbolEqualityComparer.Default.Equals(owner, encloser))
+            {
+                var prefix = target.IsStatic ? owner.Name : "this";
+                return $"{prefix}.{target.Name}({args})";
+            }
         }
 
         return $"{target.Name}({args})";
@@ -2971,13 +3006,17 @@ public static class TranspilerEngine
         // the class — including private helpers. Without this, callers of
         // private helpers (validateLevel, rotate, …) would still hit the
         // boundary-violation guard at emit time even after class-level seeding.
+        // For class-shape types (PlanarTopology etc.) instance methods are
+        // also in the boundary: they get emitted as class methods next to the
+        // caller, so a `this.IsInBounds(...)` call is always reachable.
         var containing = method.ContainingType;
         if (containing is not null)
         {
             foreach (var attr in containing.GetAttributes())
             {
-                if (attr.AttributeClass?.ToDisplayString() == "Mirrorgen.TranspileAttribute" &&
-                    method.IsStatic) return true;
+                if (attr.AttributeClass?.ToDisplayString() != "Mirrorgen.TranspileAttribute") continue;
+                if (method.IsStatic) return true;
+                if (IsClassShapeFromSymbol(containing)) return true;
             }
         }
         return false;
