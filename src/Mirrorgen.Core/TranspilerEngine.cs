@@ -3841,7 +3841,17 @@ public static class TranspilerEngine
                 if (!IsAutoProperty(prop)) continue;
                 var propName = ReadEmitName(prop.AttributeLists) ?? prop.Identifier.Text;
                 sb.Append(bodyIndent).Append("readonly ").Append(propName)
-                  .Append(": ").Append(MapType(prop.Type, ctx)).AppendLine(";");
+                  .Append(": ").Append(MapType(prop.Type, ctx));
+                // `public T Foo { get; } = new T(...);` — the initializer
+                // would otherwise be silently dropped, leaving the JS field
+                // `undefined` even though the C# value-typed default is
+                // observable to every reader. Lower the initializer alongside
+                // the declaration so both sides observe the same value.
+                if (prop.Initializer is { Value: { } init })
+                {
+                    sb.Append(" = ").Append(EmitExpression(init, ctx));
+                }
+                sb.AppendLine(";");
                 hadFieldOrProp = true;
             }
             else if (member is FieldDeclarationSyntax field)
