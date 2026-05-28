@@ -452,6 +452,13 @@ public static class TranspilerEngine
         public List<string> CurrentRefNames { get; private set; } = new();
         public bool CurrentMethodIsVoidWithRefs { get; private set; }
 
+        // The instance class we're currently emitting members for. When set,
+        // identifier resolution prepends `this.` to references that land on
+        // a non-static field/property/method of this exact type — turning
+        // `X = x;` (auto-property assignment inside a C# ctor) into
+        // `this.X = x;` on the TS side. Null at top level.
+        public INamedTypeSymbol? CurrentInstanceClass { get; private set; }
+
         public IDisposable PushRefMethodScope(List<string> refNames, bool isVoidWithRefs)
         {
             var prevNames = CurrentRefNames;
@@ -459,6 +466,13 @@ public static class TranspilerEngine
             CurrentRefNames = refNames;
             CurrentMethodIsVoidWithRefs = isVoidWithRefs;
             return new ScopePopper(this, prevNames, prevVoid);
+        }
+
+        public IDisposable PushInstanceClassScope(INamedTypeSymbol? typeSymbol)
+        {
+            var prev = CurrentInstanceClass;
+            CurrentInstanceClass = typeSymbol;
+            return new InstanceClassPopper(this, prev);
         }
 
         sealed class ScopePopper : IDisposable
@@ -473,6 +487,14 @@ public static class TranspilerEngine
                 _ctx.CurrentRefNames = _prevNames;
                 _ctx.CurrentMethodIsVoidWithRefs = _prevVoid;
             }
+        }
+
+        sealed class InstanceClassPopper : IDisposable
+        {
+            readonly EmitContext _ctx;
+            readonly INamedTypeSymbol? _prev;
+            public InstanceClassPopper(EmitContext ctx, INamedTypeSymbol? prev) { _ctx = ctx; _prev = prev; }
+            public void Dispose() => _ctx.CurrentInstanceClass = _prev;
         }
 
         public EmitContext(SemanticModel model, TypeMappingRegistry registry)
@@ -712,6 +734,15 @@ public static class TranspilerEngine
 
     static string EmitTypeDeclaration(TypeDeclarationSyntax decl, EmitContext ctx)
     {
+        // Shape = Class opt-in routes class declarations through the instance
+        // class emit path. Records / structs still fall through to the
+        // data-shape (interface) emit below — those have first-class native
+        // emit conventions and don't need the class machinery.
+        if (decl is ClassDeclarationSyntax cls && ReadShape(decl.AttributeLists) == TranspileShape.Class)
+        {
+            return EmitInstanceClass(cls, ctx);
+        }
+
         var name = ReadEmitName(decl.AttributeLists) ?? decl.Identifier.Text;
         var interfaceBody = new StringBuilder();
         var consts = new StringBuilder();
@@ -1848,6 +1879,8 @@ public static class TranspilerEngine
                 return EmitLiteral(lit);
             case IdentifierNameSyntax id:
                 return ResolveIdentifierEmit(id, ctx);
+            case ThisExpressionSyntax:
+                return "this";
             case ParenthesizedExpressionSyntax paren:
                 return $"({EmitExpression(paren.Expression, ctx)})";
             case BinaryExpressionSyntax bin:
@@ -2122,17 +2155,49 @@ public static class TranspilerEngine
         if (TryEmitNumericsVectorConstruction(oce, named, ctx, out emit)) return true;
 
         if (!IsTranspileType(named)) return false;
+
+        // [Transpile(Shape = Class)] types emit as TS classes; `new T(args)`
+        // stays as-is on the TS side (the emitted class' constructor accepts
+        // the same positional args). The default Shape = Interface path
+        // expects a positional record and folds args into an object literal.
+        if (IsTranspileClassShape(named))
+        {
+            var args = oce.ArgumentList.Arguments;
+            var parts = new List<string>(args.Count);
+            foreach (var arg in args)
+            {
+                parts.Add(EmitExpression(arg.Expression, ctx));
+            }
+            emit = $"new {named.Name}(" + string.Join(", ", parts) + ")";
+            return true;
+        }
+
         var paramNames = GetPositionalRecordParamNames(named);
         if (paramNames is null) return false;
-        var args = oce.ArgumentList.Arguments;
-        if (paramNames.Count != args.Count) return false;
-        var parts = new List<string>(args.Count);
-        for (int i = 0; i < args.Count; i++)
+        var recArgs = oce.ArgumentList.Arguments;
+        if (paramNames.Count != recArgs.Count) return false;
+        var recParts = new List<string>(recArgs.Count);
+        for (int i = 0; i < recArgs.Count; i++)
         {
-            parts.Add($"{paramNames[i]}: {EmitExpression(args[i].Expression, ctx)}");
+            recParts.Add($"{paramNames[i]}: {EmitExpression(recArgs[i].Expression, ctx)}");
         }
-        emit = "{ " + string.Join(", ", parts) + " }";
+        emit = "{ " + string.Join(", ", recParts) + " }";
         return true;
+    }
+
+    static bool IsTranspileClassShape(INamedTypeSymbol type)
+    {
+        foreach (var attr in type.GetAttributes())
+        {
+            if (attr.AttributeClass?.ToDisplayString() != "Mirrorgen.TranspileAttribute") continue;
+            foreach (var kv in attr.NamedArguments)
+            {
+                if (kv.Key != "Shape") continue;
+                // Named arg value for an enum surfaces as the underlying integer.
+                if (kv.Value.Value is int iv && iv == (int)TranspileShape.Class) return true;
+            }
+        }
+        return false;
     }
 
     // System.Numerics value types emit as inline structural TS objects so
@@ -2212,6 +2277,21 @@ public static class TranspilerEngine
                         return s;
                     }
                 }
+            }
+        }
+        // Instance-class member auto-prefix: when emitting inside `class Foo`
+        // (Shape = Class) and the identifier resolves to a non-static
+        // field/property/method of that exact type, emit `this.X` instead
+        // of bare `X`. This lets C# source keep the implicit-this convention
+        // (`X = x;` in a ctor body) without having to spell `this.` everywhere.
+        if (ctx.CurrentInstanceClass is { } enclosing && sym is not null && !sym.IsStatic)
+        {
+            var kind = sym.Kind;
+            if ((kind == SymbolKind.Field || kind == SymbolKind.Property || kind == SymbolKind.Method)
+                && sym.ContainingType is { } container
+                && SymbolEqualityComparer.Default.Equals(container, enclosing))
+            {
+                return "this." + raw;
             }
         }
         return raw;
@@ -3099,5 +3179,277 @@ public static class TranspilerEngine
             default:
                 throw new NotSupportedException($"Unsupported literal: {lit.Token.Kind()}");
         }
+    }
+
+    static TranspileShape ReadShape(SyntaxList<AttributeListSyntax> attributeLists)
+    {
+        foreach (var list in attributeLists)
+        {
+            foreach (var attr in list.Attributes)
+            {
+                if (!IsTranspileAttributeSyntax(attr)) continue;
+                if (attr.ArgumentList is null) continue;
+                foreach (var arg in attr.ArgumentList.Arguments)
+                {
+                    if (arg.NameEquals?.Name.Identifier.Text != "Shape") continue;
+                    // Attribute argument is a member-access like
+                    // `Mirrorgen.TranspileShape.Class` or `TranspileShape.Class`.
+                    // We just need the trailing member name to disambiguate.
+                    var text = arg.Expression.ToString();
+                    var lastDot = text.LastIndexOf('.');
+                    var member = lastDot >= 0 ? text[(lastDot + 1)..] : text;
+                    if (member == "Class") return TranspileShape.Class;
+                    if (member == "Interface") return TranspileShape.Interface;
+                }
+            }
+        }
+        return TranspileShape.Interface;
+    }
+
+    static string EmitInstanceClass(ClassDeclarationSyntax decl, EmitContext ctx)
+    {
+        var name = ReadEmitName(decl.AttributeLists) ?? decl.Identifier.Text;
+        var symbol = ctx.DeclaredTypeSymbol(decl);
+
+        using var _scope = ctx.PushInstanceClassScope(symbol);
+
+        var sb = new StringBuilder();
+        sb.Append("export class ").Append(name);
+
+        // implements clause — keep only base types that themselves carry
+        // [Transpile], so the TS layer doesn't pick up references to C#-only
+        // interfaces (which would be undefined at the mirror's import site).
+        if (decl.BaseList is { } baseList)
+        {
+            var implementsList = new List<string>();
+            foreach (var bt in baseList.Types)
+            {
+                if (ctx.SymbolForTypeSyntax(bt.Type) is not INamedTypeSymbol bts) continue;
+                if (bts.TypeKind != TypeKind.Interface) continue;
+                if (!IsTranspileType(bts)) continue;
+                implementsList.Add(bts.Name);
+            }
+            if (implementsList.Count > 0)
+            {
+                sb.Append(" implements ").Append(string.Join(", ", implementsList));
+            }
+        }
+
+        sb.AppendLine(" {");
+
+        var bodyIndent = BodyIndent;
+        var bodyIndent2 = BodyIndent + BodyIndent;
+        var anyBodyContent = false;
+
+        // Pass 1 — instance fields and auto-property storage. Computed
+        // properties (expression-bodied get-only) are not storage; they
+        // emit as getters in pass 3.
+        var hadFieldOrProp = false;
+        foreach (var member in decl.Members)
+        {
+            if (member is PropertyDeclarationSyntax prop)
+            {
+                if (prop.Modifiers.Any(SyntaxKind.StaticKeyword)) continue;
+                if (IsComputedProperty(prop)) continue;
+                if (!IsAutoProperty(prop)) continue;
+                var propName = ReadEmitName(prop.AttributeLists) ?? prop.Identifier.Text;
+                sb.Append(bodyIndent).Append("readonly ").Append(propName)
+                  .Append(": ").Append(MapType(prop.Type, ctx)).AppendLine(";");
+                hadFieldOrProp = true;
+            }
+            else if (member is FieldDeclarationSyntax field)
+            {
+                if (field.Modifiers.Any(SyntaxKind.StaticKeyword)) continue;
+                if (field.Modifiers.Any(SyntaxKind.ConstKeyword)) continue;
+                var isPublic = field.Modifiers.Any(SyntaxKind.PublicKeyword);
+                var isReadonly = field.Modifiers.Any(SyntaxKind.ReadOnlyKeyword);
+                foreach (var v in field.Declaration.Variables)
+                {
+                    sb.Append(bodyIndent);
+                    if (!isPublic) sb.Append("private ");
+                    if (isReadonly) sb.Append("readonly ");
+                    sb.Append(v.Identifier.Text).Append(": ").Append(MapType(field.Declaration.Type, ctx)).AppendLine(";");
+                    hadFieldOrProp = true;
+                }
+            }
+        }
+        anyBodyContent |= hadFieldOrProp;
+
+        // Pass 2 — constructor. Only the first public constructor is emitted;
+        // TS classes don't support overloads.
+        ConstructorDeclarationSyntax? ctorDecl = null;
+        foreach (var member in decl.Members)
+        {
+            if (member is ConstructorDeclarationSyntax c
+                && c.Modifiers.Any(SyntaxKind.PublicKeyword))
+            {
+                ctorDecl = c;
+                break;
+            }
+        }
+        if (ctorDecl is null)
+        {
+            foreach (var member in decl.Members)
+            {
+                if (member is ConstructorDeclarationSyntax c)
+                {
+                    ctorDecl = c;
+                    break;
+                }
+            }
+        }
+        if (ctorDecl is not null)
+        {
+            if (anyBodyContent) sb.AppendLine();
+            sb.Append(bodyIndent).Append("constructor(")
+              .Append(EmitParameterList(ctorDecl.ParameterList.Parameters, ctx))
+              .AppendLine(") {");
+            if (ctorDecl.Body is { } cbody)
+            {
+                foreach (var stmt in cbody.Statements)
+                {
+                    sb.Append(EmitStatement(stmt, ctx, bodyIndent2));
+                }
+            }
+            sb.Append(bodyIndent).AppendLine("}");
+            anyBodyContent = true;
+        }
+
+        // Pass 3 — methods + computed properties. Static methods carry the
+        // `static` modifier; instance methods emit plain.
+        foreach (var member in decl.Members)
+        {
+            switch (member)
+            {
+                case PropertyDeclarationSyntax prop when IsComputedProperty(prop):
+                {
+                    if (prop.Modifiers.Any(SyntaxKind.StaticKeyword)) break;
+                    if (anyBodyContent) sb.AppendLine();
+                    var propName = ReadEmitName(prop.AttributeLists) ?? prop.Identifier.Text;
+                    sb.Append(bodyIndent).Append("get ").Append(propName)
+                      .Append("(): ").Append(MapType(prop.Type, ctx)).AppendLine(" {");
+                    EmitComputedPropertyBody(prop, ctx, sb, bodyIndent2);
+                    sb.Append(bodyIndent).AppendLine("}");
+                    anyBodyContent = true;
+                    break;
+                }
+                case MethodDeclarationSyntax m:
+                {
+                    if (anyBodyContent) sb.AppendLine();
+                    var methodName = ReadEmitName(m.AttributeLists) ?? m.Identifier.Text;
+                    var isStatic = m.Modifiers.Any(SyntaxKind.StaticKeyword);
+                    var isPrivate = m.Modifiers.Any(SyntaxKind.PrivateKeyword);
+                    sb.Append(bodyIndent);
+                    if (isPrivate) sb.Append("private ");
+                    if (isStatic) sb.Append("static ");
+                    sb.Append(methodName).Append('(')
+                      .Append(EmitParameterList(m.ParameterList.Parameters, ctx))
+                      .Append("): ").Append(MapType(m.ReturnType, ctx)).AppendLine(" {");
+                    // Static methods on the instance class step out of the
+                    // `this.` auto-prefix scope — `Foo.Bar()` callees should
+                    // emit unqualified, and any unqualified reference must
+                    // not be silently turned into `this.X`.
+                    if (isStatic)
+                    {
+                        using var _staticScope = ctx.PushInstanceClassScope(null);
+                        EmitMethodBodyForClass(m, ctx, sb, bodyIndent2);
+                    }
+                    else
+                    {
+                        EmitMethodBodyForClass(m, ctx, sb, bodyIndent2);
+                    }
+                    sb.Append(bodyIndent).AppendLine("}");
+                    anyBodyContent = true;
+                    break;
+                }
+            }
+        }
+
+        sb.AppendLine("}");
+        return sb.ToString();
+    }
+
+    static void EmitComputedPropertyBody(
+        PropertyDeclarationSyntax prop, EmitContext ctx, StringBuilder sb, string indent)
+    {
+        if (prop.ExpressionBody is { } eb)
+        {
+            sb.Append(indent).Append("return ").Append(EmitExpression(eb.Expression, ctx)).AppendLine(";");
+            return;
+        }
+        if (prop.AccessorList is { } accList)
+        {
+            foreach (var acc in accList.Accessors)
+            {
+                if (!acc.Kind().Equals(SyntaxKind.GetAccessorDeclaration)) continue;
+                if (acc.ExpressionBody is { } accEb)
+                {
+                    sb.Append(indent).Append("return ").Append(EmitExpression(accEb.Expression, ctx)).AppendLine(";");
+                    return;
+                }
+                if (acc.Body is { } b)
+                {
+                    foreach (var stmt in b.Statements)
+                    {
+                        sb.Append(EmitStatement(stmt, ctx, indent));
+                    }
+                    return;
+                }
+            }
+        }
+    }
+
+    static void EmitMethodBodyForClass(
+        MethodDeclarationSyntax method, EmitContext ctx, StringBuilder sb, string indent)
+    {
+        if (method.Body is { } body)
+        {
+            foreach (var stmt in body.Statements)
+            {
+                sb.Append(EmitStatement(stmt, ctx, indent));
+            }
+            return;
+        }
+        if (method.ExpressionBody is { } eb)
+        {
+            var isVoid = method.ReturnType is PredefinedTypeSyntax pts
+                && pts.Keyword.IsKind(SyntaxKind.VoidKeyword);
+            if (isVoid)
+            {
+                sb.Append(indent).Append(EmitExpression(eb.Expression, ctx)).AppendLine(";");
+            }
+            else
+            {
+                sb.Append(indent).Append("return ").Append(EmitExpression(eb.Expression, ctx)).AppendLine(";");
+            }
+        }
+    }
+
+    static string EmitParameterList(SeparatedSyntaxList<ParameterSyntax> parameters, EmitContext ctx)
+    {
+        var parts = new List<string>(parameters.Count);
+        foreach (var p in parameters)
+        {
+            if (p.Type is null)
+            {
+                throw new NotSupportedException($"Parameter '{p.Identifier.Text}' has no type.");
+            }
+            var pName = p.Identifier.Text;
+            var pType = MapType(p.Type, ctx);
+            var def = p.Default is { } d ? " = " + EmitExpression(d.Value, ctx) : string.Empty;
+            parts.Add($"{pName}: {pType}{def}");
+        }
+        return string.Join(", ", parts);
+    }
+
+    static bool IsAutoProperty(PropertyDeclarationSyntax prop)
+    {
+        if (prop.ExpressionBody is not null) return false;
+        if (prop.AccessorList is null) return false;
+        foreach (var acc in prop.AccessorList.Accessors)
+        {
+            if (acc.Body is not null || acc.ExpressionBody is not null) return false;
+        }
+        return true;
     }
 }
