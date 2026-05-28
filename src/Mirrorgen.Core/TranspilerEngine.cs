@@ -96,10 +96,13 @@ public static class TranspilerEngine
             {
                 // Class-level [Transpile] on a class that holds at least one
                 // public static member also makes this file an own-emit unit.
+                // Same applies to class-shape [Transpile] classes (instance
+                // behavior — ctor body, instance method, computed property) —
+                // they emit as a TS class even without static members.
                 foreach (var classNode in tree.GetCompilationUnitRoot().DescendantNodes().OfType<ClassDeclarationSyntax>())
                 {
                     if (!HasTranspileAttribute(classNode.AttributeLists)) continue;
-                    if (HasAnyPublicStaticMember(classNode))
+                    if (HasAnyPublicStaticMember(classNode) || HasInstanceClassShape(classNode))
                     {
                         hasOwnTranspileEntry = true;
                         break;
@@ -1838,7 +1841,12 @@ public static class TranspilerEngine
             var def = named.OriginalDefinition.ToDisplayString();
             return def is "System.Collections.Generic.List<T>"
                 or "System.Collections.Generic.IReadOnlyList<T>"
-                or "System.Collections.Generic.IList<T>";
+                or "System.Collections.Generic.IList<T>"
+                or "System.Collections.Generic.IEnumerable<T>"
+                or "System.Collections.Generic.IEnumerator<T>"
+                or "System.Collections.Generic.HashSet<T>"
+                or "System.Collections.Generic.ICollection<T>"
+                or "System.Collections.Generic.IReadOnlyCollection<T>";
         }
         return false;
     }
@@ -2017,6 +2025,15 @@ public static class TranspilerEngine
                         oce.ArgumentList is { Arguments.Count: 0 } or null)
                     {
                         return "[]";
+                    }
+                    // `new HashSet<T>()` → `new Set<T>()` — TS's Set is a
+                    // close-enough analogue. .Add / .Contains / iteration
+                    // round-trip identically for value types and primitives.
+                    if (oce.Type is GenericNameSyntax setName && setName.Identifier.Text == "HashSet"
+                        && setName.TypeArgumentList.Arguments.Count == 1
+                        && oce.ArgumentList is { Arguments.Count: 0 } or null)
+                    {
+                        return $"new Set<{MapType(setName.TypeArgumentList.Arguments[0], ctx)}>()";
                     }
                     if (oce.Type is ArrayTypeSyntax arrayType &&
                         oce.ArgumentList is { Arguments.Count: 0 } or null)
@@ -2821,6 +2838,11 @@ public static class TranspilerEngine
             return dictEmit;
         }
 
+        if (TryMapSetInvocation(inv, target, ctx, out var setEmit))
+        {
+            return setEmit;
+        }
+
         if (TryMapListInvocation(inv, target, ctx, out var listEmit))
         {
             return listEmit;
@@ -2913,6 +2935,44 @@ public static class TranspilerEngine
                 $"Math.Round overload with {argsList.Count} arg(s) is not supported in v0.2. Use the 1-arg form or pass MidpointRounding.AwayFromZero / ToEven.");
         }
 
+        return false;
+    }
+
+    static bool TryMapSetInvocation(InvocationExpressionSyntax inv, IMethodSymbol target, EmitContext ctx, out string emit)
+    {
+        emit = string.Empty;
+        if (target.ContainingType is null) return false;
+        var def = target.ContainingType.OriginalDefinition.ToDisplayString();
+        if (def is not (
+            "System.Collections.Generic.HashSet<T>"
+            or "System.Collections.Generic.ISet<T>"
+            or "System.Collections.Generic.IReadOnlySet<T>"))
+        {
+            return false;
+        }
+        if (inv.Expression is not MemberAccessExpressionSyntax mae) return false;
+        var receiver = EmitExpression(mae.Expression, ctx);
+        var args = string.Join(", ",
+            inv.ArgumentList.Arguments.Select(a => EmitExpression(a.Expression, ctx)));
+
+        // HashSet<T>.Add(x) returns bool (true if newly inserted). TS Set.add
+        // returns the Set itself; emit the equivalent atomic check + insert
+        // so callers like `if (seen.Add(x)) { … }` still work.
+        if (target.Name == "Add" && inv.ArgumentList.Arguments.Count == 1)
+        {
+            emit = $"(!{receiver}.has({args}) && ({receiver}.add({args}), true))";
+            return true;
+        }
+        if (target.Name == "Contains" && inv.ArgumentList.Arguments.Count == 1)
+        {
+            emit = $"{receiver}.has({args})";
+            return true;
+        }
+        if (target.Name == "Remove" && inv.ArgumentList.Arguments.Count == 1)
+        {
+            emit = $"{receiver}.delete({args})";
+            return true;
+        }
         return false;
     }
 
