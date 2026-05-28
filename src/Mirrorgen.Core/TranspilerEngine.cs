@@ -1987,6 +1987,17 @@ public static class TranspilerEngine
                     var memberName = member.Name.Identifier.Text;
                     if (receiverType is not null)
                     {
+                        // `nullable.Value` — unwrap a Nullable<T>. JS represents
+                        // Nullable<T> as `T | null`, so reading `.Value` after a
+                        // null-check is just the receiver. (`.HasValue` would
+                        // similarly be `receiver !== null`, but callers tend to
+                        // write `x != null` directly in C#; mapping that too
+                        // can come if real code starts asking for it.)
+                        if (memberName == "Value" && receiverType is INamedTypeSymbol nrt
+                            && nrt.OriginalDefinition.SpecialType == SpecialType.System_Nullable_T)
+                        {
+                            return EmitExpression(member.Expression, ctx);
+                        }
                         if (memberName == "Count" && IsListLike(receiverType))
                         {
                             return $"{EmitExpression(member.Expression, ctx)}.length";
@@ -2422,6 +2433,22 @@ public static class TranspilerEngine
         if (ctx.TypeOf(ioc) is not INamedTypeSymbol named) return false;
         if (!IsTranspileType(named)) return false;
         var args = ioc.ArgumentList.Arguments;
+
+        // Class-shape symmetry with the explicit `new T(args)` path. Without
+        // this, `static readonly EquirectangularProjection Instance = new();`
+        // would land at the `{}` object-literal branch below and Instance would
+        // be a useless empty object.
+        if (IsClassShapeFromSymbol(named))
+        {
+            var classParts = new List<string>(args.Count);
+            foreach (var arg in args)
+            {
+                classParts.Add(EmitExpression(arg.Expression, ctx));
+            }
+            emit = $"new {named.Name}(" + string.Join(", ", classParts) + ")";
+            return true;
+        }
+
         var paramNames = GetPositionalRecordParamNames(named)
             ?? GetCtorParamPropertyNames(named, args.Count);
         if (paramNames is null) return false;
