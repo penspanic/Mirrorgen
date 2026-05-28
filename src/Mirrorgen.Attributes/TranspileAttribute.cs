@@ -20,3 +20,17 @@ public enum TranspileShape
     Interface = 0,
     Class = 1,
 }
+
+/// <summary>
+/// Excludes a single member from a [Transpile]-marked type emit. Use on methods
+/// (or get-only properties) that depend on C#-only constructs or unmirrored
+/// types and have no place in the generated TS surface. Class-level [Transpile]
+/// still emits the rest of the type as usual.
+/// </summary>
+[AttributeUsage(
+    AttributeTargets.Method | AttributeTargets.Property | AttributeTargets.Field,
+    AllowMultiple = false,
+    Inherited = false)]
+public sealed class NoTranspileAttribute : Attribute
+{
+}

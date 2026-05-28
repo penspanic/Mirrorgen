@@ -677,6 +677,24 @@ public static class TranspilerEngine
                n.EndsWith(".TranspileAttribute", StringComparison.Ordinal);
     }
 
+    static bool HasNoTranspileAttribute(SyntaxList<AttributeListSyntax> attributeLists)
+    {
+        foreach (var list in attributeLists)
+        {
+            foreach (var attr in list.Attributes)
+            {
+                var n = attr.Name.ToString();
+                if (n == "NoTranspile" || n == "NoTranspileAttribute" ||
+                    n.EndsWith(".NoTranspile", StringComparison.Ordinal) ||
+                    n.EndsWith(".NoTranspileAttribute", StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
     static string? ReadEmitName(SyntaxList<AttributeListSyntax> attributeLists)
     {
         foreach (var list in attributeLists)
@@ -3337,6 +3355,7 @@ public static class TranspilerEngine
                 case PropertyDeclarationSyntax prop when IsComputedProperty(prop):
                 {
                     if (prop.Modifiers.Any(SyntaxKind.StaticKeyword)) break;
+                    if (HasNoTranspileAttribute(prop.AttributeLists)) break;
                     if (anyBodyContent) sb.AppendLine();
                     var propName = ReadEmitName(prop.AttributeLists) ?? prop.Identifier.Text;
                     sb.Append(bodyIndent).Append("get ").Append(propName)
@@ -3348,6 +3367,7 @@ public static class TranspilerEngine
                 }
                 case MethodDeclarationSyntax m:
                 {
+                    if (HasNoTranspileAttribute(m.AttributeLists)) break;
                     if (anyBodyContent) sb.AppendLine();
                     var methodName = ReadEmitName(m.AttributeLists) ?? m.Identifier.Text;
                     var isStatic = m.Modifiers.Any(SyntaxKind.StaticKeyword);

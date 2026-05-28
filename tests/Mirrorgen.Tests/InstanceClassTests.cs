@@ -225,6 +225,26 @@ public class InstanceClassTests
     }
 
     [Fact]
+    public void NoTranspile_Method_Is_Skipped()
+    {
+        var ts = TranspilerEngine.TranspileSource("""
+            [Mirrorgen.Transpile(Shape = Mirrorgen.TranspileShape.Class)]
+            public class Surface
+            {
+                public int X { get; }
+                public Surface(int x) { X = x; }
+
+                public int Visible() => X;
+
+                [Mirrorgen.NoTranspile]
+                public int Hidden() => X * 2;
+            }
+            """);
+        Assert.Contains("Visible(): number {", ts);
+        Assert.DoesNotContain("Hidden", ts);
+    }
+
+    [Fact]
     public void Out_Param_In_Instance_Method_Emits_Tuple_Return()
     {
         var ts = TranspilerEngine.TranspileSource("""
