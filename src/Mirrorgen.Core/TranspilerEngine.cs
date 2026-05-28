@@ -876,6 +876,21 @@ public static class TranspilerEngine
                                     .Append(": ").Append(tsType)
                                     .Append(" = ").Append(initEmit).AppendLine(";");
                             }
+                            else if (isStatic && variable.Initializer?.Value is { } defaultInit
+                                && IsDefaultLiteralExpression(defaultInit)
+                                && ctx.TypeOf(defaultInit) is INamedTypeSymbol defaultType
+                                && TryEmitDefaultLiteral(defaultType, ctx, out var defaultEmit))
+                            {
+                                // `public static readonly T X = default;` — emit
+                                // the all-zero object literal of T so callers can
+                                // reference X at module level (e.g. `CellId.Invalid`
+                                // collapses to bare `Invalid`).
+                                var tsType = MapType(field.Declaration.Type, ctx);
+                                var keyword = isPublic ? "export const " : "const ";
+                                consts.Append(keyword).Append(member)
+                                    .Append(": ").Append(tsType)
+                                    .Append(" = ").Append(defaultEmit).AppendLine(";");
+                            }
                             else if (isConst || isStatic)
                             {
                                 // Static / const without a recognisable initializer —
@@ -1973,6 +1988,19 @@ public static class TranspilerEngine
                         TryFormatTsLiteral(constValue, out var literal))
                     {
                         return literal;
+                    }
+                    // Static field/property of a [Transpile] type: the walker
+                    // emits these at module scope (`export const Invalid = …`)
+                    // — drop the type prefix so `CellId.Invalid` resolves to
+                    // the bare `Invalid` const.
+                    if (ctx.SymbolFor(member) is { } memberSym
+                        && memberSym.IsStatic
+                        && memberSym.ContainingType is { } memberOwner
+                        && IsTranspileType(memberOwner)
+                        && memberOwner.TypeKind != TypeKind.Enum
+                        && (memberSym.Kind == SymbolKind.Field || memberSym.Kind == SymbolKind.Property))
+                    {
+                        return memberName;
                     }
                     return $"{EmitExpression(member.Expression, ctx)}.{memberName}";
                 }
@@ -3409,7 +3437,11 @@ public static class TranspilerEngine
         }
 
         // Pass 3 — methods + computed properties. Static methods carry the
-        // `static` modifier; instance methods emit plain.
+        // `static` modifier; instance methods emit plain. TS classes don't
+        // support overloads — first declaration with a given name wins;
+        // subsequent overloads are dropped (mark them [NoTranspile] if you
+        // want the other one to be the survivor).
+        var emittedMemberNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var member in decl.Members)
         {
             switch (member)
@@ -3418,8 +3450,9 @@ public static class TranspilerEngine
                 {
                     if (prop.Modifiers.Any(SyntaxKind.StaticKeyword)) break;
                     if (HasNoTranspileAttribute(prop.AttributeLists)) break;
-                    if (anyBodyContent) sb.AppendLine();
                     var propName = ReadEmitName(prop.AttributeLists) ?? prop.Identifier.Text;
+                    if (!emittedMemberNames.Add(propName)) break;
+                    if (anyBodyContent) sb.AppendLine();
                     sb.Append(bodyIndent).Append("get ").Append(propName)
                       .Append("(): ").Append(MapType(prop.Type, ctx)).AppendLine(" {");
                     EmitComputedPropertyBody(prop, ctx, sb, bodyIndent2);
@@ -3430,8 +3463,9 @@ public static class TranspilerEngine
                 case MethodDeclarationSyntax m:
                 {
                     if (HasNoTranspileAttribute(m.AttributeLists)) break;
-                    if (anyBodyContent) sb.AppendLine();
                     var methodName = ReadEmitName(m.AttributeLists) ?? m.Identifier.Text;
+                    if (!emittedMemberNames.Add(methodName)) break;
+                    if (anyBodyContent) sb.AppendLine();
                     var isStatic = m.Modifiers.Any(SyntaxKind.StaticKeyword);
                     var isPrivate = m.Modifiers.Any(SyntaxKind.PrivateKeyword);
                     var isIterator = IsIteratorMethod(m);
@@ -3628,6 +3662,51 @@ public static class TranspilerEngine
                 hiddenFieldNames.Contains(ma.Name.Identifier.Text),
             _ => false,
         };
+    }
+
+    static bool IsDefaultLiteralExpression(ExpressionSyntax expr)
+    {
+        if (expr is LiteralExpressionSyntax lit && lit.Token.IsKind(SyntaxKind.DefaultKeyword)) return true;
+        if (expr is DefaultExpressionSyntax) return true;
+        return false;
+    }
+
+    static bool TryEmitDefaultLiteral(INamedTypeSymbol type, EmitContext ctx, out string emit)
+    {
+        emit = string.Empty;
+        // Use the syntax tree of the positional record (or struct with [Transpile])
+        // to walk each field/parameter and emit a zero literal per type. Fall back
+        // to undefined when no positional declaration exists.
+        foreach (var sref in type.DeclaringSyntaxReferences)
+        {
+            if (sref.GetSyntax() is RecordDeclarationSyntax rec && rec.ParameterList is { } parameters)
+            {
+                var parts = new List<string>(parameters.Parameters.Count);
+                foreach (var p in parameters.Parameters)
+                {
+                    if (p.Type is null) return false;
+                    parts.Add($"{p.Identifier.Text}: {ZeroLiteralForType(p.Type)}");
+                }
+                emit = "{ " + string.Join(", ", parts) + " }";
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static string ZeroLiteralForType(TypeSyntax type)
+    {
+        if (type is PredefinedTypeSyntax pts)
+        {
+            return pts.Keyword.Kind() switch
+            {
+                SyntaxKind.LongKeyword or SyntaxKind.ULongKeyword => "0n",
+                SyntaxKind.BoolKeyword => "false",
+                SyntaxKind.StringKeyword => "\"\"",
+                _ => "0",
+            };
+        }
+        return "0 as any";
     }
 
     static bool IsAutoProperty(PropertyDeclarationSyntax prop)
