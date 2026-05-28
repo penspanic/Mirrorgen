@@ -2865,6 +2865,15 @@ public static class TranspilerEngine
             return "[]";
         }
 
+        // Record-struct value equality — `a.Equals(b)` where the receiver
+        // and arg are the same [Transpile]'d record struct. C# autogenerates
+        // a deep field-by-field equality on records; TS interfaces have no
+        // such structural compare, so emit it inline (`a.F1 === b.F1 && …`).
+        if (TryMapRecordStructEquals(inv, target, ctx, out var eqEmit))
+        {
+            return eqEmit;
+        }
+
         if (TryMapMathInvocation(target, out var jsName))
         {
             var raw = $"Math.{jsName}({args})";
@@ -2986,6 +2995,90 @@ public static class TranspilerEngine
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Maps `a.Equals(b)` to deep field equality when `a` and `b` are the
+    /// same [Transpile]'d record struct (e.g. CellId.Equals(other)). The
+    /// record's instance fields/auto-properties are AND-joined as
+    /// `a.X === b.X && a.Y === b.Y && …`. Falls through for non-record or
+    /// cross-type Equals calls.
+    /// </summary>
+    static bool TryMapRecordStructEquals(InvocationExpressionSyntax inv, IMethodSymbol target, EmitContext ctx, out string emit)
+    {
+        emit = string.Empty;
+        if (target.Name != "Equals" || target.Parameters.Length != 1) return false;
+        if (inv.Expression is not MemberAccessExpressionSyntax mae) return false;
+        if (target.ContainingType is not INamedTypeSymbol receiverType) return false;
+        if (!receiverType.IsRecord || !receiverType.IsValueType) return false;
+        if (!IsTranspileType(receiverType)) return false;
+        // Only handle the same-type overload (struct.Equals(other)). Object
+        // overloads or cross-type comparisons fall through to the generic
+        // method-call path so callers see the unsupported diagnostic.
+        var paramType = target.Parameters[0].Type as INamedTypeSymbol;
+        if (paramType is null || !SymbolEqualityComparer.Default.Equals(paramType, receiverType)) return false;
+
+        var fields = CollectRecordStructInstanceFieldNames(receiverType);
+        if (fields.Count == 0) return false;
+
+        var left = EmitExpression(mae.Expression, ctx);
+        var right = EmitExpression(inv.ArgumentList.Arguments[0].Expression, ctx);
+        var parts = new List<string>(fields.Count);
+        foreach (var name in fields)
+        {
+            parts.Add($"{left}.{name} === {right}.{name}");
+        }
+        emit = "(" + string.Join(" && ", parts) + ")";
+        return true;
+    }
+
+    /// <summary>
+    /// Field-wise equality emit for `a == b` / `a != b` where both sides
+    /// resolve to the same [Transpile]'d record struct type.
+    /// </summary>
+    static bool TryEmitRecordStructEqualityBinary(BinaryExpressionSyntax bin, bool negate, EmitContext ctx, out string emit)
+    {
+        emit = string.Empty;
+        if (ctx.TypeOf(bin.Left) is not INamedTypeSymbol lhsType) return false;
+        if (ctx.TypeOf(bin.Right) is not INamedTypeSymbol rhsType) return false;
+        if (!lhsType.IsRecord || !lhsType.IsValueType) return false;
+        if (!SymbolEqualityComparer.Default.Equals(lhsType, rhsType)) return false;
+        if (!IsTranspileType(lhsType)) return false;
+
+        var fields = CollectRecordStructInstanceFieldNames(lhsType);
+        if (fields.Count == 0) return false;
+
+        var left = EmitExpression(bin.Left, ctx);
+        var right = EmitExpression(bin.Right, ctx);
+        var join = negate ? " || " : " && ";
+        var cmp = negate ? "!==" : "===";
+        var parts = new List<string>(fields.Count);
+        foreach (var name in fields)
+        {
+            parts.Add($"{left}.{name} {cmp} {right}.{name}");
+        }
+        emit = "(" + string.Join(join, parts) + ")";
+        return true;
+    }
+
+    static List<string> CollectRecordStructInstanceFieldNames(INamedTypeSymbol type)
+    {
+        // Record struct fields come from positional parameters (surfaced as
+        // properties on the type symbol). We use the property-list snapshot
+        // since the record's primary ctor synthesizes one property per
+        // positional param and the walker also emits them that way. Skip
+        // static, indexer, and explicitly-implemented members.
+        var names = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var member in type.GetMembers())
+        {
+            if (member is not IPropertySymbol prop) continue;
+            if (prop.IsStatic || prop.IsIndexer) continue;
+            if (prop.DeclaredAccessibility != Accessibility.Public) continue;
+            if (!seen.Add(prop.Name)) continue;
+            names.Add(prop.Name);
+        }
+        return names;
     }
 
     static bool TryMapSetInvocation(InvocationExpressionSyntax inv, IMethodSymbol target, EmitContext ctx, out string emit)
@@ -3283,6 +3376,18 @@ public static class TranspilerEngine
     static string EmitBinary(BinaryExpressionSyntax bin, EmitContext ctx)
     {
         var op = MapBinaryOperator(bin.OperatorToken);
+
+        // Record-struct value equality via `==` / `!=`. C# autogenerates a
+        // deep equality on record struct types, TS `===` is reference
+        // equality on the literal — emit field-wise compare so callers like
+        // `if (candidate == neighbor)` still resolve to value semantics.
+        var binKind = bin.OperatorToken.Kind();
+        if ((binKind == SyntaxKind.EqualsEqualsToken || binKind == SyntaxKind.ExclamationEqualsToken)
+            && TryEmitRecordStructEqualityBinary(bin, binKind == SyntaxKind.ExclamationEqualsToken, ctx, out var eqBinary))
+        {
+            return eqBinary;
+        }
+
         var left = EmitExpression(bin.Left, ctx);
         var right = EmitExpression(bin.Right, ctx);
 
