@@ -37,18 +37,14 @@ jobs:
         # graph causes dotnet pack to re-invoke Build on the publishable
         # projects, which then collides with NoBuild=true (NETSDK1085). The
         # pack step does its own incremental build pass instead.
+        #
+        # This step IS the packaging smoke-test: if pack fails, the job fails.
+        # The resulting .nupkg has no downstream consumer (release.yml packs
+        # its own), so we intentionally do NOT upload it — uploading on every
+        # push accumulated ~1GB of account-wide Actions storage in days,
+        # exhausting the shared quota and blocking artifact uploads in sibling
+        # repos. Real release packages come from release.yml on a tag.
         run: dotnet pack Mirrorgen.sln -c Release -o artifacts
-
-      - name: Upload package artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: nuget-packages
-          path: artifacts/*.nupkg
-          if-no-files-found: error
-          # Short retention — these are smoke-test artifacts to sanity-check
-          # packaging on every push. The actual release packages are
-          # produced by release.yml when a tag is pushed.
-          retention-days: 3
 
   runtime-ts:
     name: runtime-ts build + test

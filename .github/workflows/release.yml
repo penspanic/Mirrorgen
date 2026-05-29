@@ -46,6 +46,10 @@ jobs:
           name: nuget-packages
           path: artifacts/*.nupkg
           if-no-files-found: error
+          # Inter-job handoff only (downloaded by the publish job in this same
+          # run). No reason to keep it for the 90-day default — shortest TTL
+          # avoids piling up account-wide shared Actions storage.
+          retention-days: 1
 
   npm:
     name: Publish @mirrorgen/runtime
