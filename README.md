@@ -71,21 +71,21 @@ See [`docs/CONCEPT.md`](docs/CONCEPT.md) for the precise subset spec and roadmap
 
 ## Status
 
-**Alpha (v0.1.0-alpha.1).** Walker subset is feature-complete for v0.1,
-plugin discovery works end-to-end, and the cross-validation harness keeps
-the C# and TS sides byte-equivalent on every push. The API is still
-subject to change while the early adopters shake it out.
+**v0.3.1** — published on NuGet (all five packages). The walker subset is
+feature-complete, plugin discovery works end-to-end, and the cross-validation
+harness keeps the C# and TS sides byte-equivalent on every push. The API may
+still shift while early adopters shake it out.
 
-Watch / star to be pinged when v0.1.0 stable lands.
+Watch / star to be pinged on new releases.
 
 ## How it will fit into a project
 
 ```xml
 <!-- YourProject.Rules.csproj -->
 <ItemGroup>
-    <PackageReference Include="Mirrorgen.Attributes" Version="0.1.0" />
-    <PackageReference Include="Mirrorgen.Analyzers" Version="0.1.0" PrivateAssets="all" />
-    <PackageReference Include="Mirrorgen.MSBuild" Version="0.1.0" PrivateAssets="all" />
+    <PackageReference Include="Mirrorgen.Attributes" Version="0.3.1" />
+    <PackageReference Include="Mirrorgen.Analyzers" Version="0.3.1" PrivateAssets="all" />
+    <PackageReference Include="Mirrorgen.MSBuild" Version="0.3.1" PrivateAssets="all" />
 </ItemGroup>
 
 <PropertyGroup>

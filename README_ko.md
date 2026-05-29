@@ -71,21 +71,21 @@ Mirrorgen 은 *부분집합* transpiler 입니다. 임의의 C# 을 변환하려
 
 ## 상태
 
-**Alpha (v0.1.0-alpha.1).** v0.1 walker subset 이 feature-complete, plugin
-discovery 가 end-to-end 동작, cross-validation harness 가 매 push 마다 C#
-↔ TS byte-equivalence 검증. 얼리 어답터 피드백을 받는 동안 API 는 변경될
-수 있습니다.
+**v0.3.1** — NuGet 에 5개 패키지 모두 배포됨. walker subset 이
+feature-complete, plugin discovery 가 end-to-end 동작, cross-validation
+harness 가 매 push 마다 C# ↔ TS byte-equivalence 를 검증합니다. 얼리 어답터
+피드백을 받는 동안 API 는 변경될 수 있습니다.
 
-v0.1.0 stable 출시 알림을 받고 싶으면 watch / star 해주세요.
+새 릴리스 알림을 받고 싶으면 watch / star 해주세요.
 
 ## 프로젝트에 통합하는 방식
 
 ```xml
 <!-- YourProject.Rules.csproj -->
 <ItemGroup>
-    <PackageReference Include="Mirrorgen.Attributes" Version="0.1.0" />
-    <PackageReference Include="Mirrorgen.Analyzers" Version="0.1.0" PrivateAssets="all" />
-    <PackageReference Include="Mirrorgen.MSBuild" Version="0.1.0" PrivateAssets="all" />
+    <PackageReference Include="Mirrorgen.Attributes" Version="0.3.1" />
+    <PackageReference Include="Mirrorgen.Analyzers" Version="0.3.1" PrivateAssets="all" />
+    <PackageReference Include="Mirrorgen.MSBuild" Version="0.3.1" PrivateAssets="all" />
 </ItemGroup>
 
 <PropertyGroup>
