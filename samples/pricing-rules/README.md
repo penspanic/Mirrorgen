@@ -30,16 +30,20 @@ Rules/
   MirrorgenConfig.cs    # IMirrorgenExtension — maps OrderId/ProductId -> number
 client/
   test/pricing.test.ts  # vitest harness over the emitted fixtures.json
-  src/_generated/       # MSBuild-emitted: Pricing.ts + fixtures.json
+  src/_generated/       # MSBuild-emitted: Pricing.ts + Domain.ts + fixtures.json
 regen.sh                # dotnet build + vitest
 ```
 
 The walker resolves reachability across the whole project at once, so
 methods in `Pricing.cs` that reference a record or enum in `Domain.cs`
-inline that declaration into the same `Pricing.ts` they emit into.
-Files that only declare types (no `[Transpile]` methods of their own)
-don't produce their own `.ts` file — they're picked up by whichever
-rules file consumes them.
+inline that declaration into the same `Pricing.ts` they emit into — that
+inlined copy keeps `Pricing.ts` self-contained.
+
+A type-level `[Transpile]` on a record / struct / enum *also* makes its
+declaring file an own-emit unit (`Domain.cs` → `Domain.ts`), so the
+shapes are additionally available as a standalone module for consumers
+that prefer to import them directly. The inline copies above are
+unaffected — the two coexist by design.
 
 ## One-command reproduction
 

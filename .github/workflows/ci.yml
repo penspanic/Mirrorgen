@@ -29,6 +29,27 @@ jobs:
       - name: Build
         run: dotnet build Mirrorgen.sln --no-restore -c Release
 
+      - name: Verify committed _generated artifacts are current
+        # The sample _generated/ dirs are force-tracked (see .gitignore) so a
+        # fresh clone runs `npm test` without invoking the CLI first. The Build
+        # above re-emits them via the Mirrorgen MSBuild target; if the working
+        # tree now differs, a walker/sample change shipped without regenerating
+        # the committed output. `git status --porcelain` catches both modified
+        # tracked files and brand-new emitted files (e.g. a new Domain.ts).
+        run: |
+          changed="$(git status --porcelain -- \
+            samples/minimal/client/src/_generated \
+            samples/pricing-rules/client/src/_generated)"
+          if [ -n "$changed" ]; then
+            echo "::error::Committed _generated artifacts are stale. Rebuild the samples and commit the refreshed _generated/ output (see samples/*/regen.sh)."
+            echo "$changed"
+            git --no-pager diff -- \
+              samples/minimal/client/src/_generated \
+              samples/pricing-rules/client/src/_generated
+            exit 1
+          fi
+          echo "Sample _generated artifacts are up to date."
+
       - name: Test
         run: dotnet test Mirrorgen.sln --no-build -c Release --verbosity normal
 
