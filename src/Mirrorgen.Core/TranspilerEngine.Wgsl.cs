@@ -1,7 +1,9 @@
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
+using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text;
 
@@ -41,26 +43,76 @@ public static partial class TranspilerEngine
             syntaxTrees: new[] { tree },
             references: TrustedReferences.Value,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-        var ctx = new EmitContext(compilation.GetSemanticModel(tree), TypeMappingRegistry.Empty);
-
         var module = new WgslModule();
-        var entries = CollectWgslMethodEntries(tree);
         var bodies = new StringBuilder();
         bool first = true;
+        EmitTreeIntoModule(tree, compilation, typeNames: null, module, bodies, ref first);
+        return module.Preamble() + bodies;
+    }
+
+    /// <summary>Transpile a set of C# source files to a single WGSL module.
+    /// All files share one compilation so cross-type const folding resolves
+    /// against the real declarations (e.g. an encoding's tile-id constants).
+    /// <paramref name="typeNames"/> restricts emission to methods whose
+    /// containing type name is in the set — a build emits only the GPU-bound
+    /// subset, leaving TypeScript-only <c>[Transpile]</c> types untouched.
+    /// All emitted functions share one struct/binding preamble.</summary>
+    public static string TranspileFilesToWgsl(IEnumerable<string> sourceFiles, IReadOnlyCollection<string> typeNames)
+    {
+        var trees = new List<SyntaxTree>();
+        foreach (var file in sourceFiles)
+        {
+            var full = Path.GetFullPath(file);
+            trees.Add(CSharpSyntaxTree.ParseText(File.ReadAllText(full), path: full));
+        }
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "MirrorgenWgslBatch",
+            syntaxTrees: trees,
+            references: PublicTrustedReferences,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+
+        var module = new WgslModule();
+        var bodies = new StringBuilder();
+        bool first = true;
+        foreach (var tree in trees)
+            EmitTreeIntoModule(tree, compilation, typeNames, module, bodies, ref first);
+        return module.Preamble() + bodies;
+    }
+
+    // Emit every selected [Transpile] entry in one tree into a shared module,
+    // resolving symbols against the (possibly multi-tree) compilation.
+    static void EmitTreeIntoModule(
+        SyntaxTree tree, Compilation compilation, IReadOnlyCollection<string>? typeNames,
+        WgslModule module, StringBuilder bodies, ref bool first)
+    {
+        var entries = CollectWgslMethodEntries(tree, typeNames);
+        if (entries.Count == 0) return;
+        var ctx = new EmitContext(compilation.GetSemanticModel(tree), TypeMappingRegistry.Empty);
         foreach (var method in entries)
         {
             if (!first) bodies.AppendLine();
             bodies.Append(new WgslEmitter(ctx, module).EmitMethod(method));
             first = false;
         }
-        return module.Preamble() + bodies;
     }
 
     // Entry selection for WGSL: methods carrying [Transpile] directly, plus
     // public-static methods inside a class-level [Transpile] type. Emitted in
     // source order, de-duplicated.
-    static List<MethodDeclarationSyntax> CollectWgslMethodEntries(SyntaxTree tree)
+    static List<MethodDeclarationSyntax> CollectWgslMethodEntries(
+        SyntaxTree tree, IReadOnlyCollection<string>? typeNames)
     {
+        // An empty/null set means "no filter" (emit every entry); otherwise a
+        // method qualifies only if its containing type's name is listed. This
+        // is what lets a project mix WGSL-bound types with TypeScript-only
+        // [Transpile] types (e.g. const exports, expression-bodied helpers)
+        // the WGSL emitter can't render.
+        bool TypeAllowed(string? name) =>
+            typeNames is null || typeNames.Count == 0 || (name is not null && typeNames.Contains(name));
+
+        static string? ContainingTypeName(SyntaxNode node) =>
+            node.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault()?.Identifier.Text;
+
         var seen = new HashSet<MethodDeclarationSyntax>();
         var ordered = new List<MethodDeclarationSyntax>();
         void Add(MethodDeclarationSyntax m)
@@ -71,12 +123,13 @@ public static partial class TranspilerEngine
         var root = tree.GetCompilationUnitRoot();
         foreach (var m in root.DescendantNodes().OfType<MethodDeclarationSyntax>())
         {
-            if (HasTranspileAttribute(m.AttributeLists)) Add(m);
+            if (HasTranspileAttribute(m.AttributeLists) && TypeAllowed(ContainingTypeName(m))) Add(m);
         }
         foreach (var tds in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
         {
             if (!HasTranspileAttribute(tds.AttributeLists)) continue;
             if (tds is not ClassDeclarationSyntax and not StructDeclarationSyntax and not RecordDeclarationSyntax) continue;
+            if (!TypeAllowed(tds.Identifier.Text)) continue;
             foreach (var m in tds.Members.OfType<MethodDeclarationSyntax>())
             {
                 if (HasNoTranspileAttribute(m.AttributeLists)) continue;

@@ -41,6 +41,19 @@ public sealed class MirrorgenTask : Microsoft.Build.Utilities.Task
     /// </summary>
     public string AggregateOutputFile { get; set; } = string.Empty;
 
+    /// <summary>
+    /// When set, the same source set is also transpiled to WGSL and written to
+    /// this single file. WGSL is a different surface language (GPU shaders), so
+    /// it is opt-in and type-scoped via <see cref="WgslTypes"/> — only the
+    /// listed types emit, leaving TypeScript-only [Transpile] types alone.
+    /// </summary>
+    public string WgslOutputFile { get; set; } = string.Empty;
+
+    /// <summary>Type names (simple, unqualified) to emit as WGSL. Required when
+    /// <see cref="WgslOutputFile"/> is set; an empty set would try to emit every
+    /// [Transpile] type, including ones the WGSL backend can't render.</summary>
+    public ITaskItem[] WgslTypes { get; set; } = Array.Empty<ITaskItem>();
+
     public override bool Execute()
     {
         if (string.IsNullOrEmpty(OutputDirectory))
@@ -64,6 +77,23 @@ public sealed class MirrorgenTask : Microsoft.Build.Utilities.Task
             Log.LogMessage(
                 MessageImportance.High,
                 $"Mirrorgen {TranspilerEngine.Version}: wrote {result.WrittenCount} TS file(s), skipped {result.SkippedCount}.");
+
+            if (!string.IsNullOrEmpty(WgslOutputFile))
+            {
+                var typeNames = WgslTypes.Select(t => t.ItemSpec).Where(s => !string.IsNullOrEmpty(s)).ToArray();
+                if (typeNames.Length == 0)
+                {
+                    Log.LogError("Mirrorgen: WgslOutputFile is set but no WgslTypes were provided — WGSL emission must be type-scoped.");
+                    return false;
+                }
+                var wgsl = TranspilerEngine.TranspileFilesToWgsl(files, typeNames);
+                var wgslDir = Path.GetDirectoryName(Path.GetFullPath(WgslOutputFile));
+                if (!string.IsNullOrEmpty(wgslDir)) Directory.CreateDirectory(wgslDir);
+                File.WriteAllText(WgslOutputFile, wgsl);
+                Log.LogMessage(
+                    MessageImportance.High,
+                    $"Mirrorgen {TranspilerEngine.Version}: wrote WGSL for [{string.Join(", ", typeNames)}] to {WgslOutputFile}.");
+            }
             return true;
         }
         catch (Exception ex)
