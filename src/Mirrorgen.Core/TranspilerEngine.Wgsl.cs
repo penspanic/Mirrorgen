@@ -284,10 +284,17 @@ public static partial class TranspilerEngine
                     foreach (var v in local.Declaration.Variables)
                     {
                         var kw = _mutatedLocals.Contains(v.Identifier.Text) ? "var" : "let";
-                        if (v.Initializer is null)
-                            throw new NotSupportedException($"WGSL: uninitialized local '{v.Identifier.Text}' not supported.");
                         var ty = explicitTy ?? MapResolvedType(
                             _ctx.LocalTypeOf(v) ?? throw new NotSupportedException($"WGSL: cannot infer type of 'var {v.Identifier.Text}'."));
+                        if (v.Initializer is null)
+                        {
+                            // Uninitialized C# local, assigned later in branches.
+                            // WGSL function-scope `var x: T;` is zero-initialized;
+                            // `let` requires an initializer, so this must be `var`.
+                            sb.Append(pad).Append("var ").Append(v.Identifier.Text)
+                              .Append(": ").Append(ty).AppendLine(";");
+                            continue;
+                        }
                         sb.Append(pad).Append(kw).Append(' ').Append(v.Identifier.Text)
                           .Append(": ").Append(ty).Append(" = ")
                           .Append(EmitConverted(v.Initializer.Value, ty)).AppendLine(";");
@@ -398,6 +405,13 @@ public static partial class TranspilerEngine
                     return "(" + EmitExpression(paren.Expression) + ")";
 
                 case MemberAccessExpressionSyntax member:
+                    // Cross-type const reference (e.g. an encoding's BedrockTileId)
+                    // folds to its literal value — WGSL has no external named
+                    // constants. Array .Length is not a constant, so it falls
+                    // through to the arrayLength lowering below; tuple/struct
+                    // field access (a.R) likewise has no constant value.
+                    if (_ctx.TryGetConstantValue(member, out var memberConst) && memberConst is not null)
+                        return EmitConstant(memberConst, _ctx.TypeOf(member));
                     // Array .Length → arrayLength(&buf). C# Array.Length is int,
                     // so coerce the u32 WGSL builtin back to i32 to match the
                     // surrounding integer arithmetic.
@@ -486,6 +500,12 @@ public static partial class TranspilerEngine
             var argList = inv.ArgumentList.Arguments;
             for (int i = 0; i < argList.Count; i++)
             {
+                // Arguments bound to the callee's [WgslBuffer] params are dropped:
+                // those parameters are module-scope storage bindings (not values)
+                // in both the callee signature and at the call site. Passing the
+                // binding as a value argument is what naga rejects.
+                if (target is not null && i < target.Parameters.Length && IsWgslBufferParam(target.Parameters[i]))
+                    continue;
                 var argExpr = argList[i].Expression;
                 var paramWgsl = target is not null && i < target.Parameters.Length
                     ? WgslScalar(target.Parameters[i].Type)
@@ -493,6 +513,14 @@ public static partial class TranspilerEngine
                 args.Add(EmitConverted(argExpr, paramWgsl));
             }
             return calleeName + "(" + string.Join(", ", args) + ")";
+        }
+
+        static bool IsWgslBufferParam(IParameterSymbol p)
+        {
+            foreach (var a in p.GetAttributes())
+                if (a.AttributeClass?.Name is "WgslBufferAttribute" or "WgslBuffer")
+                    return true;
+            return false;
         }
 
         // Resolve a semantic type symbol (from `var` inference) to its WGSL
@@ -566,22 +594,32 @@ public static partial class TranspilerEngine
             if (lit.IsKind(SyntaxKind.TrueLiteralExpression)) return "true";
             if (lit.IsKind(SyntaxKind.FalseLiteralExpression)) return "false";
 
-            var ty = _ctx.TypeOf(lit);
             if (_ctx.TryGetConstantValue(lit, out var v) && v is not null)
-            {
-                switch (v)
-                {
-                    case double d: return FormatFloat(d);
-                    case float f: return FormatFloat(f);
-                    case int i:
-                        return IsFloatType(ty) ? FormatFloat(i) : i.ToString(Inv);
-                    case long l:
-                        return IsFloatType(ty) ? FormatFloat(l) : l.ToString(Inv);
-                    case uint ui: return ui.ToString(Inv) + "u";
-                    case byte b: return ((uint)b).ToString(Inv) + "u";
-                }
-            }
+                return EmitConstant(v, _ctx.TypeOf(lit));
             throw new NotSupportedException($"WGSL: literal '{lit.Token.Text}' not supported yet.");
+        }
+
+        // Format a compile-time constant value (literal or folded const member)
+        // as a WGSL literal. `ty` is the expression's C# type so an integer
+        // constant assigned into a float context still emits with a decimal
+        // point. Integer-suffix rules mirror EmitLiteral's scalar mapping
+        // (u32 family gets the `u` suffix; i32 family is bare).
+        string EmitConstant(object v, ITypeSymbol? ty)
+        {
+            switch (v)
+            {
+                case bool bo: return bo ? "true" : "false";
+                case double d: return FormatFloat(d);
+                case float f: return FormatFloat(f);
+                case int i: return IsFloatType(ty) ? FormatFloat(i) : i.ToString(Inv);
+                case long l: return IsFloatType(ty) ? FormatFloat(l) : l.ToString(Inv);
+                case short sh: return IsFloatType(ty) ? FormatFloat(sh) : ((int)sh).ToString(Inv);
+                case sbyte sb: return IsFloatType(ty) ? FormatFloat(sb) : ((int)sb).ToString(Inv);
+                case uint ui: return ui.ToString(Inv) + "u";
+                case ushort us: return ((uint)us).ToString(Inv) + "u";
+                case byte b: return ((uint)b).ToString(Inv) + "u";
+            }
+            throw new NotSupportedException($"WGSL: constant of type '{v.GetType().Name}' not supported yet.");
         }
 
         // WGSL scalar name for a C# numeric type, or null if not a supported

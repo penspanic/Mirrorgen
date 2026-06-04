@@ -100,6 +100,43 @@ public class WgslCompositeTests
     }
 
     [Fact]
+    public void Cross_Type_Const_Member_Folds_To_Literal()
+    {
+        // `Enc.BedrockTileId` (a byte const on another type) inlines to its
+        // value — WGSL has no external named constants. The byte promotes to
+        // i32 in the `int ==` comparison.
+        var wgsl = TranspilerEngine.TranspileSourceToWgsl("""
+            public static class Enc { public const byte BedrockTileId = 1; }
+            public static class S {
+                [Mirrorgen.Attributes.Transpile]
+                public static int Pick(int tile) {
+                    if (tile == Enc.BedrockTileId) { return 7; }
+                    return 0;
+                }
+            }
+            """);
+        Assert.Contains("if (tile == i32(1u)) {", wgsl);
+        Assert.DoesNotContain("Enc.BedrockTileId", wgsl);
+    }
+
+    [Fact]
+    public void Uninitialized_Local_Emits_Zero_Init_Var()
+    {
+        // A C# local declared without an initializer and assigned in branches
+        // becomes a WGSL function-scope `var x: T;` (zero-initialized).
+        var wgsl = Wgsl("""
+            public static (byte R, byte G, byte B) Choose(bool hi, (byte R, byte G, byte B) a, (byte R, byte G, byte B) b) {
+                (byte R, byte G, byte B) c;
+                if (hi) { c = a; } else { c = b; }
+                return c;
+            }
+            """);
+        Assert.Contains("var c: MgTuple_RGB;", wgsl);
+        Assert.Contains("c = a;", wgsl);
+        Assert.Contains("c = b;", wgsl);
+    }
+
+    [Fact]
     public void For_Loop_Lowers_Postincrement()
     {
         var wgsl = Wgsl("""
