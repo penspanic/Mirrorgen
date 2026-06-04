@@ -35,7 +35,8 @@
                        MirrorgenConfig="$(MirrorgenConfig)"
                        AggregateOutputFile="$(MirrorgenAggregateOutputFile)"
                        WgslOutputFile="$(MirrorgenWgslOutput)"
-                       WgslTypes="@(MirrorgenWgslType)" />
+                       WgslTypes="@(MirrorgenWgslType)"
+                       WgslExportName="$(MirrorgenWgslExportName)" />
         <Touch Files="$(IntermediateOutputPath)mirrorgen.stamp" AlwaysCreate="true" />
     </Target>
 
