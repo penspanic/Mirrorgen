@@ -8,7 +8,7 @@ using System.Text;
 
 namespace Mirrorgen.Core;
 
-public static class TranspilerEngine
+public static partial class TranspilerEngine
 {
     public const string Version = "0.0.1-alpha";
 
