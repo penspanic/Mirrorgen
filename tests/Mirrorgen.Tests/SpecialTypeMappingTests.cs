@@ -58,6 +58,6 @@ public class SpecialTypeMappingTests
                 public System.Guid? MaybeId { get; init; }
             }
             """);
-        Assert.Contains("MaybeId?: string | null;", ts);
+        Assert.Contains("MaybeId: string | null;", ts);
     }
 }

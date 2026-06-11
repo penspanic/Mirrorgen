@@ -15,7 +15,7 @@ public class NullableTests
                 public int? Value { get; set; }
             }
             """);
-        Assert.Contains("  Value?: number | null;", ts);
+        Assert.Contains("  Value: number | null;", ts);
     }
 
     [Fact]
@@ -29,7 +29,7 @@ public class NullableTests
                 public string? Nickname { get; set; }
             }
             """);
-        Assert.Contains("  Nickname?: string | null;", ts);
+        Assert.Contains("  Nickname: string | null;", ts);
     }
 
     [Fact]
@@ -40,7 +40,7 @@ public class NullableTests
             public record Sample(int Id, int? OptionalScore);
             """);
         Assert.Contains("  Id: number;", ts);
-        Assert.Contains("  OptionalScore?: number | null;", ts);
+        Assert.Contains("  OptionalScore: number | null;", ts);
     }
 
     [Fact]

@@ -699,6 +699,27 @@ public static partial class TranspilerEngine
         return false;
     }
 
+    /// <summary>Symbol-side twin of <see cref="ReadEmitName(SyntaxList{AttributeListSyntax})"/> —
+    /// resolves `[Transpile(EmitName="…")]` from a bound symbol so CALL SITES
+    /// rename consistently with their declaration (methods used to emit under
+    /// their C# name while the declaration honoured EmitName, producing
+    /// generated code that called an undefined function).</summary>
+    static string? ReadEmitNameFromSymbol(ISymbol symbol)
+    {
+        foreach (var attr in symbol.GetAttributes())
+        {
+            if (attr.AttributeClass?.ToDisplayString() != "Mirrorgen.TranspileAttribute") continue;
+            foreach (var kv in attr.NamedArguments)
+            {
+                if (kv.Key == "EmitName" && kv.Value.Value is string s && !string.IsNullOrEmpty(s))
+                {
+                    return s;
+                }
+            }
+        }
+        return null;
+    }
+
     static string? ReadEmitName(SyntaxList<AttributeListSyntax> attributeLists)
     {
         foreach (var list in attributeLists)
@@ -808,7 +829,10 @@ public static partial class TranspilerEngine
                     }
                     var member = p.Identifier.Text;
                     if (!seen.Add(member)) continue;
-                    var opt = p.Type is NullableTypeSyntax ? "?" : "";
+                    // Nullable C# member: the field always exists, its VALUE may be null —
+                    // `M: T | null`, not `M?: …` (optional fields type as possibly
+                    // undefined and poison generated locals declared `T | null`).
+                    var opt = "";
                     interfaceBody.Append(BodyIndent).Append(member).Append(opt).Append(": ").Append(MapType(p.Type, ctx)).AppendLine(";");
                     hasInterfaceMember = true;
                 }
@@ -831,7 +855,7 @@ public static partial class TranspilerEngine
                         // as interface fields would invite callers to set them.
                         // Leave behaviour to method emit; skip from the shape.
                         if (IsComputedProperty(prop)) break;
-                        var opt = prop.Type is NullableTypeSyntax ? "?" : "";
+                        var opt = "";
                         interfaceBody.Append(BodyIndent).Append(member).Append(opt).Append(": ").Append(MapType(prop.Type, ctx)).AppendLine(";");
                         hasInterfaceMember = true;
                         break;
@@ -905,7 +929,7 @@ public static partial class TranspilerEngine
                             }
                             else
                             {
-                                var opt = field.Declaration.Type is NullableTypeSyntax ? "?" : "";
+                                var opt = "";
                                 interfaceBody.Append(BodyIndent).Append(member).Append(opt).Append(": ").Append(MapType(field.Declaration.Type, ctx)).AppendLine(";");
                                 hasInterfaceMember = true;
                             }
@@ -2169,9 +2193,23 @@ public static partial class TranspilerEngine
                             && ucp.Expression is LiteralExpressionSyntax ucpLit
                             && ucpLit.Token.IsKind(SyntaxKind.NullKeyword):
                             return $"{operand} !== null";
+                        // `x is { }` — the empty property pattern is C#'s
+                        // idiomatic not-null test; with no designation it is
+                        // exactly `!== null` (JS has no separate undefined
+                        // produced by transpiled code paths).
+                        case RecursivePatternSyntax rp when IsEmptyNullCheckPattern(rp):
+                            return $"{operand} !== null";
+                        case UnaryPatternSyntax up2 when up2.OperatorToken.IsKind(SyntaxKind.NotKeyword)
+                            && up2.Pattern is RecursivePatternSyntax nrp
+                            && IsEmptyNullCheckPattern(nrp):
+                            return $"{operand} === null";
+                        case RecursivePatternSyntax rpd when rpd.Designation is not null:
+                            throw new NotSupportedException(
+                                $"Pattern '{isPat.Pattern}' binds a designation variable; bind explicitly instead "
+                                + "(`if (x is null) …; var v = x;` — Nullable<T>.Value also unwraps).");
                         default:
                             throw new NotSupportedException(
-                                $"Pattern '{isPat.Pattern.Kind()}' is not supported. Only `is null` / `is not null` patterns are accepted.");
+                                $"Pattern '{isPat.Pattern.Kind()}' is not supported. Only `is null` / `is not null` / `is {{ }}` / `is not {{ }}` patterns are accepted.");
                     }
                 }
             case ThrowExpressionSyntax thrExpr:
@@ -2187,6 +2225,14 @@ public static partial class TranspilerEngine
                 throw new NotSupportedException($"Unsupported expression: {expr.Kind()}");
         }
     }
+
+    /// <summary>`{ }` — an empty property pattern with no designation, no
+    /// positional clause and no type: a pure not-null test.</summary>
+    static bool IsEmptyNullCheckPattern(RecursivePatternSyntax rp)
+        => rp.Type is null
+        && rp.Designation is null
+        && rp.PositionalPatternClause is null
+        && (rp.PropertyPatternClause is null || rp.PropertyPatternClause.Subpatterns.Count == 0);
 
     static string EmitThrowExpressionBody(ThrowExpressionSyntax thrExpr, EmitContext ctx)
     {
@@ -2967,6 +3013,10 @@ public static partial class TranspilerEngine
                 $"Method '{target.ContainingType?.Name}.{target.Name}' is not marked [Transpile]; calls outside the transpile boundary are not allowed.");
         }
 
+        // Honour `[Transpile(EmitName="…")]` on the resolved method so call
+        // sites follow a renamed declaration.
+        var emitName = ReadEmitNameFromSymbol(target) ?? target.Name;
+
         // Extension methods reify the receiver as the first explicit arg:
         // `face.Normal()` → `Normal(face)` (the C# `this CubeFace face`
         // parameter becomes a plain positional argument on the TS side).
@@ -2976,7 +3026,7 @@ public static partial class TranspilerEngine
         {
             var receiver = EmitExpression(extAccess.Expression, ctx);
             var allArgs = args.Length > 0 ? $"{receiver}, {args}" : receiver;
-            return $"{target.Name}({allArgs})";
+            return $"{emitName}({allArgs})";
         }
 
         // Bare invocation inside an instance-class scope — `IsInBounds(x, y)`
@@ -2989,7 +3039,7 @@ public static partial class TranspilerEngine
                 SymbolEqualityComparer.Default.Equals(owner, encloser))
             {
                 var prefix = target.IsStatic ? owner.Name : "this";
-                return $"{prefix}.{target.Name}({args})";
+                return $"{prefix}.{emitName}({args})";
             }
         }
 
@@ -3002,10 +3052,10 @@ public static partial class TranspilerEngine
         if (!target.IsStatic && inv.Expression is MemberAccessExpressionSyntax memberAccess)
         {
             var receiver = EmitExpression(memberAccess.Expression, ctx);
-            return $"{receiver}.{target.Name}({args})";
+            return $"{receiver}.{emitName}({args})";
         }
 
-        return $"{target.Name}({args})";
+        return $"{emitName}({args})";
     }
 
     static bool TryMapMathDivergenceInvocation(InvocationExpressionSyntax inv, IMethodSymbol target, EmitContext ctx, out string emit)

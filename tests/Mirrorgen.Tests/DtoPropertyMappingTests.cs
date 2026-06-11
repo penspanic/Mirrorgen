@@ -14,7 +14,7 @@ public class DtoPropertyMappingTests
                 public int? Count { get; init; }
             }
             """);
-        Assert.Contains("Count?: number | null;", ts);
+        Assert.Contains("Count: number | null;", ts);
     }
 
     [Fact]
@@ -26,7 +26,7 @@ public class DtoPropertyMappingTests
                 public string? Name { get; init; }
             }
             """);
-        Assert.Contains("Name?: string | null;", ts);
+        Assert.Contains("Name: string | null;", ts);
     }
 
     [Fact]
@@ -36,7 +36,7 @@ public class DtoPropertyMappingTests
             [Mirrorgen.Attributes.Transpile]
             public record Foo(int? Maybe, string Required);
             """);
-        Assert.Contains("Maybe?: number | null;", ts);
+        Assert.Contains("Maybe: number | null;", ts);
         Assert.Contains("Required: string;", ts);
     }
 

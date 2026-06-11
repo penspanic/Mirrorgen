@@ -14,8 +14,8 @@ export interface JoinCellRequest {
 export interface JoinCellResponse {
     CellId: string;
     State: ConnectionState;
-    PlayerCount?: number | null;
-    Reason?: string | null;
+    PlayerCount: number | null;
+    Reason: string | null;
 }
 
 export interface CellSnapshot {
@@ -32,7 +32,7 @@ export interface OperatorProfile {
 
 export interface HostBanner {
     Title: string;
-    Subtitle?: string | null;
+    Subtitle: string | null;
     StateHistory: ConnectionState[];
 }
 
