@@ -46,6 +46,21 @@ public class ValidatorEmitTests
     }
 
     [Fact]
+    public void Nullable_Field_Validator_Normalizes_Omitted_To_Null()
+    {
+        // Wire documents may omit a nullable field; the interface contract is
+        // "always present, value may be null" — the parse step bridges the two.
+        var ts = TranspilerEngine.TranspileSource(
+            """
+            [Mirrorgen.Attributes.Transpile]
+            public record Foo(int? Maybe);
+            """,
+            WithValidators);
+        Assert.Contains("} else if (x === undefined) {", ts);
+        Assert.Contains("o[\"Maybe\"] = null;", ts);
+    }
+
+    [Fact]
     public void Required_Field_Throws_On_Undefined()
     {
         var ts = TranspilerEngine.TranspileSource(

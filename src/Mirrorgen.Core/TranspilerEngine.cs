@@ -1058,6 +1058,12 @@ public static partial class TranspilerEngine
         {
             sb.Append(BodyIndent).Append(BodyIndent).AppendLine("if (x !== null && x !== undefined) {");
             EmitValidatorTypeCheck(sb, path, "x", inner, interfaceNames, enumNames, "      ");
+            // Wire documents may OMIT a nullable field entirely; the emitted
+            // interface says it is always present with a possibly-null value.
+            // Normalize here so a parsed document is an honest member of the
+            // type (and `x !== null` checks downstream behave).
+            sb.Append(BodyIndent).Append(BodyIndent).AppendLine("} else if (x === undefined) {");
+            sb.Append(BodyIndent).Append(BodyIndent).Append(BodyIndent).Append("o[\"").Append(field).AppendLine("\"] = null;");
             sb.Append(BodyIndent).Append(BodyIndent).AppendLine("}");
         }
         else
