@@ -42,6 +42,13 @@ public sealed class MirrorgenTask : Microsoft.Build.Utilities.Task
     public string AggregateOutputFile { get; set; } = string.Empty;
 
     /// <summary>
+    /// When true, append lightweight parseX(value) validators to the emitted
+    /// TypeScript output. The validators normalize omitted nullable members to
+    /// null so parsed wire documents satisfy the generated interface contract.
+    /// </summary>
+    public bool EmitValidators { get; set; }
+
+    /// <summary>
     /// When set, the same source set is also transpiled to WGSL and written to
     /// this single file. WGSL is a different surface language (GPU shaders), so
     /// it is opt-in and type-scoped via <see cref="WgslTypes"/> — only the
@@ -79,9 +86,11 @@ public sealed class MirrorgenTask : Microsoft.Build.Utilities.Task
             {
                 files.AddRange(AdditionalSources.Select(item => item.GetMetadata("FullPath")));
             }
-            var options = string.IsNullOrEmpty(AggregateOutputFile)
-                ? TranspileOptions.Default
-                : new TranspileOptions { AggregateOutputFile = AggregateOutputFile };
+            var options = new TranspileOptions
+            {
+                AggregateOutputFile = string.IsNullOrEmpty(AggregateOutputFile) ? null : AggregateOutputFile,
+                EmitValidators = EmitValidators,
+            };
             var result = BatchTranspiler.TranspileFiles(files, SourceRoot, OutputDirectory, registry, options);
             Log.LogMessage(
                 MessageImportance.High,

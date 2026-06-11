@@ -7,6 +7,7 @@
         <MirrorgenSourceRoot Condition="'$(MirrorgenSourceRoot)' == ''">$(MSBuildProjectDirectory)</MirrorgenSourceRoot>
         <MirrorgenFixturesOutput Condition="'$(MirrorgenFixturesOutput)' == ''">$(MirrorgenOutput)fixtures.json</MirrorgenFixturesOutput>
         <MirrorgenEmitFixtures Condition="'$(MirrorgenEmitFixtures)' == ''">false</MirrorgenEmitFixtures>
+        <MirrorgenEmitValidators Condition="'$(MirrorgenEmitValidators)' == ''">false</MirrorgenEmitValidators>
     </PropertyGroup>
 
     <!--
@@ -34,6 +35,7 @@
                        AssemblyPath="$(TargetPath)"
                        MirrorgenConfig="$(MirrorgenConfig)"
                        AggregateOutputFile="$(MirrorgenAggregateOutputFile)"
+                       EmitValidators="$(MirrorgenEmitValidators)"
                        WgslOutputFile="$(MirrorgenWgslOutput)"
                        WgslTypes="@(MirrorgenWgslType)"
                        WgslExportName="$(MirrorgenWgslExportName)" />
