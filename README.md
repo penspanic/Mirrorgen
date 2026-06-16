@@ -1,5 +1,8 @@
 # Mirrorgen
 
+[![NuGet](https://img.shields.io/nuget/v/Mirrorgen.Attributes.svg)](https://www.nuget.org/packages/Mirrorgen.Attributes)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 **English** · [한국어](README_ko.md)
 
 **Transpile C# types *and* pure logic into TypeScript — with cross-validation that proves the two stay in lockstep.**
@@ -71,7 +74,8 @@ See [`docs/CONCEPT.md`](docs/CONCEPT.md) for the precise subset spec and roadmap
 
 ## Status
 
-**v0.3.1** — published on NuGet (all five packages). The walker subset is
+All five packages are published on NuGet (see the version badge above). The
+walker subset is
 feature-complete, plugin discovery works end-to-end, and the cross-validation
 harness keeps the C# and TS sides byte-equivalent on every push. The API may
 still shift while early adopters shake it out.
@@ -80,12 +84,23 @@ Watch / star to be pinged on new releases.
 
 ## How it will fit into a project
 
+```bash
+# In YourProject.Rules — always pulls the latest published version
+dotnet add package Mirrorgen.Attributes
+dotnet add package Mirrorgen.Analyzers
+dotnet add package Mirrorgen.MSBuild
+```
+
+`Mirrorgen.Analyzers` and `Mirrorgen.MSBuild` are build-time only — mark them
+`PrivateAssets="all"` so they don't flow to consumers. Then point Mirrorgen at
+your client and config:
+
 ```xml
-<!-- YourProject.Rules.csproj -->
+<!-- YourProject.Rules.csproj — add PrivateAssets to the entries
+     `dotnet add package` just created (their Version attributes are kept) -->
 <ItemGroup>
-    <PackageReference Include="Mirrorgen.Attributes" Version="0.3.1" />
-    <PackageReference Include="Mirrorgen.Analyzers" Version="0.3.1" PrivateAssets="all" />
-    <PackageReference Include="Mirrorgen.MSBuild" Version="0.3.1" PrivateAssets="all" />
+    <PackageReference Include="Mirrorgen.Analyzers" PrivateAssets="all" />
+    <PackageReference Include="Mirrorgen.MSBuild" PrivateAssets="all" />
 </ItemGroup>
 
 <PropertyGroup>

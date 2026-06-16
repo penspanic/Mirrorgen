@@ -1,5 +1,8 @@
 # Mirrorgen
 
+[![NuGet](https://img.shields.io/nuget/v/Mirrorgen.Attributes.svg)](https://www.nuget.org/packages/Mirrorgen.Attributes)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 [English](README.md) · **한국어**
 
 **C# 의 타입과 pure 로직을 TypeScript 로 transpile — 두 구현이 lockstep 으로 일치함을 cross-validation 으로 증명합니다.**
@@ -71,7 +74,7 @@ Mirrorgen 은 *부분집합* transpiler 입니다. 임의의 C# 을 변환하려
 
 ## 상태
 
-**v0.3.1** — NuGet 에 5개 패키지 모두 배포됨. walker subset 이
+NuGet 에 5개 패키지 모두 배포됨 (현재 버전은 위 배지 참고). walker subset 이
 feature-complete, plugin discovery 가 end-to-end 동작, cross-validation
 harness 가 매 push 마다 C# ↔ TS byte-equivalence 를 검증합니다. 얼리 어답터
 피드백을 받는 동안 API 는 변경될 수 있습니다.
@@ -80,12 +83,23 @@ harness 가 매 push 마다 C# ↔ TS byte-equivalence 를 검증합니다. 얼�
 
 ## 프로젝트에 통합하는 방식
 
+```bash
+# YourProject.Rules 에서 — 항상 최신 배포 버전을 가져옵니다
+dotnet add package Mirrorgen.Attributes
+dotnet add package Mirrorgen.Analyzers
+dotnet add package Mirrorgen.MSBuild
+```
+
+`Mirrorgen.Analyzers` 와 `Mirrorgen.MSBuild` 는 빌드 시점 전용이므로
+`PrivateAssets="all"` 을 붙여 소비 프로젝트로 전파되지 않게 합니다. 그런 다음
+출력 경로와 config 를 지정합니다:
+
 ```xml
-<!-- YourProject.Rules.csproj -->
+<!-- YourProject.Rules.csproj — `dotnet add package` 가 방금 만든 항목에
+     PrivateAssets 를 추가합니다 (Version 속성은 그대로 유지) -->
 <ItemGroup>
-    <PackageReference Include="Mirrorgen.Attributes" Version="0.3.1" />
-    <PackageReference Include="Mirrorgen.Analyzers" Version="0.3.1" PrivateAssets="all" />
-    <PackageReference Include="Mirrorgen.MSBuild" Version="0.3.1" PrivateAssets="all" />
+    <PackageReference Include="Mirrorgen.Analyzers" PrivateAssets="all" />
+    <PackageReference Include="Mirrorgen.MSBuild" PrivateAssets="all" />
 </ItemGroup>
 
 <PropertyGroup>
