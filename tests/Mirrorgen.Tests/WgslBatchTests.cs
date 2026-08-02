@@ -96,4 +96,132 @@ public class WgslBatchTests : IDisposable
         var last = wgsl.LastIndexOf("struct MgTuple_RGB", StringComparison.Ordinal);
         Assert.True(first >= 0 && first == last, "MgTuple_RGB must be declared exactly once");
     }
+
+    // ── The type filter has to say when it selected nothing ──────────────────
+    //
+    // Both of these come from one real failure: a project asked for
+    // "SandCanvas.Sim.SandCanvasWeatherField", got a syntactically valid WGSL
+    // file with no functions in it, and a green build. The filter compared
+    // against the bare identifier, so the qualified name matched nothing — and
+    // matching nothing was indistinguishable from having nothing to emit.
+
+    [Fact]
+    public void Namespace_Qualified_Name_Selects_The_Type()
+    {
+        var src = Write("Field.cs", """
+            namespace N.Deep;
+            [Mirrorgen.Attributes.Transpile]
+            public static class Field {
+                public static int Twice(int x) { return x * 2; }
+            }
+            """);
+
+        var wgsl = TranspilerEngine.TranspileFilesToWgsl(
+            new[] { src }, new[] { "N.Deep.Field" });
+
+        Assert.Contains("fn Twice", wgsl);
+    }
+
+    [Fact]
+    public void Bare_Name_Still_Selects_The_Type()
+    {
+        var src = Write("Field.cs", """
+            namespace N.Deep;
+            [Mirrorgen.Attributes.Transpile]
+            public static class Field {
+                public static int Twice(int x) { return x * 2; }
+            }
+            """);
+
+        var wgsl = TranspilerEngine.TranspileFilesToWgsl(
+            new[] { src }, new[] { "Field" });
+
+        Assert.Contains("fn Twice", wgsl);
+    }
+
+    [Fact]
+    public void Type_Filter_Matching_Nothing_Is_An_Error()
+    {
+        var src = Write("Field.cs", """
+            namespace N.Deep;
+            [Mirrorgen.Attributes.Transpile]
+            public static class Field {
+                public static int Twice(int x) { return x * 2; }
+            }
+            """);
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => TranspilerEngine.TranspileFilesToWgsl(new[] { src }, new[] { "Typo" }));
+
+        // The message has to name what was asked for; "no output" on its own is
+        // what made this take a day to find.
+        Assert.Contains("Typo", ex.Message);
+    }
+
+    [Fact]
+    public void Partially_Matching_Filter_Reports_Only_The_Miss()
+    {
+        var src = Write("Field.cs", """
+            namespace N.Deep;
+            [Mirrorgen.Attributes.Transpile]
+            public static class Field {
+                public static int Twice(int x) { return x * 2; }
+            }
+            """);
+
+        var ex = Assert.Throws<InvalidOperationException>(
+            () => TranspilerEngine.TranspileFilesToWgsl(new[] { src }, new[] { "Field", "Typo" }));
+
+        Assert.Contains("Typo", ex.Message);
+        Assert.DoesNotContain("'Field'", ex.Message);
+    }
+
+    /// <summary>
+    /// A const declared in the same type as the method using it must fold, the
+    /// way a cross-file one does. WGSL has no notion of a C# const, so leaving
+    /// the identifier in place emits a file that references an undeclared
+    /// symbol — valid-looking text that no shader can compile. TypeScript
+    /// folds these already; the two backends disagreed.
+    /// </summary>
+    [Fact]
+    public void Folds_Private_Const_Declared_In_The_Same_Type()
+    {
+        var src = Write("F.cs", """
+            namespace N;
+            [Mirrorgen.Attributes.Transpile]
+            public static class F {
+                private const int Bits = 8;
+                private const int Mask = (1 << Bits) - 1;
+                public static int Mix(int x) { return (x >> Bits) + (x & Mask); }
+            }
+            """);
+
+        var wgsl = TranspilerEngine.TranspileFilesToWgsl(new[] { src }, new[] { "F" });
+
+        Assert.Contains("x >> 8", wgsl);
+        Assert.Contains("x & 255", wgsl);
+        Assert.DoesNotContain("Bits", wgsl);
+        Assert.DoesNotContain("Mask", wgsl);
+    }
+
+    /// <summary>
+    /// A type whose every method is an instance method emits nothing, and that
+    /// is legal — WGSL has no receiver — but it is not the same as a filter
+    /// that matched nothing, and the two must not report the same way.
+    /// </summary>
+    [Fact]
+    public void Matched_Type_With_No_Static_Methods_Is_Not_An_Error()
+    {
+        var src = Write("Inst.cs", """
+            namespace N;
+            [Mirrorgen.Attributes.Transpile]
+            public sealed record Inst(int Seed) {
+                public int Twice(int x) { return x * Seed; }
+            }
+            """);
+
+        var wgsl = TranspilerEngine.TranspileFilesToWgsl(new[] { src }, new[] { "Inst" });
+
+        Assert.DoesNotContain("fn Twice", wgsl);
+    }
 }

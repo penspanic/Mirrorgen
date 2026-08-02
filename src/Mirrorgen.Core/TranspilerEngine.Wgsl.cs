@@ -71,6 +71,10 @@ public static partial class TranspilerEngine
             references: PublicTrustedReferences,
             options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
+        // Before emitting: a filter entry that names nothing is a build error,
+        // not an empty file (see WgslTypeFilter).
+        WgslTypeFilter.EnsureAllMatched(trees, typeNames);
+
         var module = new WgslModule();
         var bodies = new StringBuilder();
         bool first = true;
@@ -107,11 +111,12 @@ public static partial class TranspilerEngine
         // is what lets a project mix WGSL-bound types with TypeScript-only
         // [Transpile] types (e.g. const exports, expression-bodied helpers)
         // the WGSL emitter can't render.
-        bool TypeAllowed(string? name) =>
-            typeNames is null || typeNames.Count == 0 || (name is not null && typeNames.Contains(name));
+        bool TypeAllowed(TypeDeclarationSyntax? tds) =>
+            typeNames is null || typeNames.Count == 0
+            || (tds is not null && WgslTypeFilter.Matches(typeNames, tds));
 
-        static string? ContainingTypeName(SyntaxNode node) =>
-            node.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault()?.Identifier.Text;
+        static TypeDeclarationSyntax? ContainingType(SyntaxNode node) =>
+            node.Ancestors().OfType<TypeDeclarationSyntax>().FirstOrDefault();
 
         var seen = new HashSet<MethodDeclarationSyntax>();
         var ordered = new List<MethodDeclarationSyntax>();
@@ -123,13 +128,13 @@ public static partial class TranspilerEngine
         var root = tree.GetCompilationUnitRoot();
         foreach (var m in root.DescendantNodes().OfType<MethodDeclarationSyntax>())
         {
-            if (HasTranspileAttribute(m.AttributeLists) && TypeAllowed(ContainingTypeName(m))) Add(m);
+            if (HasTranspileAttribute(m.AttributeLists) && TypeAllowed(ContainingType(m))) Add(m);
         }
         foreach (var tds in root.DescendantNodes().OfType<TypeDeclarationSyntax>())
         {
             if (!HasTranspileAttribute(tds.AttributeLists)) continue;
             if (tds is not ClassDeclarationSyntax and not StructDeclarationSyntax and not RecordDeclarationSyntax) continue;
-            if (!TypeAllowed(tds.Identifier.Text)) continue;
+            if (!TypeAllowed(tds)) continue;
             foreach (var m in tds.Members.OfType<MethodDeclarationSyntax>())
             {
                 if (HasNoTranspileAttribute(m.AttributeLists)) continue;
@@ -137,6 +142,82 @@ public static partial class TranspilerEngine
             }
         }
         return ordered;
+    }
+
+    /// <summary>
+    /// How a WGSL type-filter entry is matched, and the check that it selected
+    /// anything.
+    ///
+    /// <para><b>Why the check exists.</b> The filter used to compare only
+    /// against the bare identifier. A project that asked for
+    /// <c>Some.Namespace.Field</c> — the obvious way to name a type, and what
+    /// the MSBuild property looks like it wants — matched nothing, and matching
+    /// nothing produced a syntactically valid WGSL file with no functions in it
+    /// and a green build. Silence is the worst possible answer here: the file
+    /// exists, so nothing downstream looks wrong until a shader is missing a
+    /// symbol.</para>
+    /// </summary>
+    static class WgslTypeFilter
+    {
+        /// <summary>A filter entry matches the bare identifier or the
+        /// namespace-qualified name. Both spellings are natural, so both
+        /// work.</summary>
+        public static bool Matches(IReadOnlyCollection<string> typeNames, TypeDeclarationSyntax tds)
+        {
+            if (typeNames.Contains(tds.Identifier.Text)) return true;
+            var qualified = QualifiedName(tds);
+            return qualified is not null && typeNames.Contains(qualified);
+        }
+
+        /// <summary>Namespace-qualified name, or null for a type declared
+        /// outside any namespace. Handles nested namespace declarations by
+        /// walking outward.</summary>
+        public static string? QualifiedName(TypeDeclarationSyntax tds)
+        {
+            string? ns = null;
+            foreach (var ancestor in tds.Ancestors())
+            {
+                if (ancestor is BaseNamespaceDeclarationSyntax n)
+                    ns = ns is null ? n.Name.ToString() : n.Name + "." + ns;
+            }
+            return ns is null ? null : ns + "." + tds.Identifier.Text;
+        }
+
+        /// <summary>
+        /// Fail when a filter entry named a type that no scanned source
+        /// declares. A type that matched but has nothing a shader can take
+        /// (every method an instance method, say) is <b>not</b> an error — that
+        /// is a legitimate empty emit, and only an unmatched <i>name</i> means
+        /// the build was asking for something that is not there.
+        /// </summary>
+        public static void EnsureAllMatched(
+            IReadOnlyList<SyntaxTree> trees, IReadOnlyCollection<string>? typeNames)
+        {
+            if (typeNames is null || typeNames.Count == 0) return;
+
+            var declared = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var tree in trees)
+            {
+                foreach (var tds in tree.GetCompilationUnitRoot()
+                             .DescendantNodes().OfType<TypeDeclarationSyntax>())
+                {
+                    declared.Add(tds.Identifier.Text);
+                    if (QualifiedName(tds) is string qualified) declared.Add(qualified);
+                }
+            }
+
+            var missing = typeNames.Where(n => !declared.Contains(n)).ToList();
+            if (missing.Count == 0) return;
+
+            var asked = string.Join(", ", missing.Select(m => "'" + m + "'"));
+            var found = declared.Count == 0
+                ? "(none)"
+                : string.Join(", ", declared.OrderBy(d => d, StringComparer.Ordinal));
+            throw new InvalidOperationException(
+                $"WGSL type filter matched no declared type: {asked}. "
+                + $"Types declared in the scanned sources: {found}. "
+                + "Name a type by its bare identifier or its namespace-qualified name.");
+        }
     }
 
     // Module-level accumulator: struct definitions synthesized from C# tuple
@@ -452,6 +533,17 @@ public static partial class TranspilerEngine
                     return EmitLiteral(lit);
 
                 case IdentifierNameSyntax id:
+                    // A bare identifier is usually a local or a parameter, but
+                    // it is also how a method names a const declared in its own
+                    // type — and WGSL has no C# consts, so that has to fold to a
+                    // literal exactly as the qualified form does below. Without
+                    // this the emitter produced a file that referenced an
+                    // undeclared symbol: text that looks like WGSL, passes every
+                    // string assertion, and no shader can compile. Locals and
+                    // parameters have no constant value, so they fall through
+                    // untouched.
+                    if (_ctx.TryGetConstantValue(id, out var idConst) && idConst is not null)
+                        return EmitConstant(idConst, _ctx.TypeOf(id));
                     return id.Identifier.Text;
 
                 case ParenthesizedExpressionSyntax paren:
