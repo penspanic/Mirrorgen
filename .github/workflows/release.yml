@@ -17,6 +17,21 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The tag drives MinVer, and `dotnet nuget push` cannot be taken back —
+      # nuget.org refuses to unlist a pushed version. A tag placed on a commit
+      # that is not on main publishes whatever that commit happened to be;
+      # 0.3.0-alpha.39 was exactly that and is stuck on nuget.org forever
+      # (#74). Fail before Pack rather than after Push.
+      - name: Verify the tag is on main
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::Tag ${GITHUB_REF_NAME} points at $GITHUB_SHA, which is not an ancestor of origin/main. Releases are cut from main only — see CONTRIBUTING.md."
+            exit 1
+          fi
+          echo "$GITHUB_SHA is on main."
+
       - uses: actions/setup-dotnet@v5
         with:
           global-json-file: global.json
