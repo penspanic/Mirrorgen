@@ -104,7 +104,7 @@ export function CategoryByMod(x: number): number {
   if (m < 0) {
     m = ((m + 3) | 0);
   }
-  return ((): number => { const _v = m; if (_v === 0) return 100; if (_v === 1) return 200; return 300; throw new Error("switch expression: no arm matched"); })();
+  return ((): number => { const _v = m; if (_v === 0) return 100; if (_v === 1) return 200; return 300; })();
 }
 
 export function LabelMod4(x: number): string {
@@ -204,4 +204,65 @@ export function FirstNonNegativeStep(n: number): number {
     i++;
   } while (i < 100);
   return i;
+}
+
+export function UAdd(a: number, b: number): number {
+  return ((a + b) >>> 0);
+}
+
+export function USub(a: number, b: number): number {
+  return ((a - b) >>> 0);
+}
+
+export function UMul(a: number, b: number): number {
+  return (Math.imul(a, b) >>> 0);
+}
+
+export function UDiv(a: number, b: number): number {
+  return b === 0 ? 0 : ((a / b) >>> 0);
+}
+
+export function UMod(a: number, b: number): number {
+  return b === 0 ? 0 : ((a % b) >>> 0);
+}
+
+export function UShl(a: number, n: number): number {
+  return ((a << n) >>> 0);
+}
+
+export function UShr(a: number, n: number): number {
+  return (a >>> n);
+}
+
+export function UAnd(a: number, b: number): number {
+  return ((a & b) >>> 0);
+}
+
+export function UOr(a: number, b: number): number {
+  return ((a | b) >>> 0);
+}
+
+export function UXor(a: number, b: number): number {
+  return ((a ^ b) >>> 0);
+}
+
+export function UNot(a: number): number {
+  return ((~a) >>> 0);
+}
+
+export function UIncrement(a: number): number {
+  let x: number = a;
+  x = ((x + 1) >>> 0);
+  x = ((x + 1) >>> 0);
+  return x;
+}
+
+export function UXorshift32(seed: number): number {
+  let x: number = seed === 0 ? 1 : seed;
+  for (let i: number = 0; i < 64; i++) {
+    x = ((x ^ (((x << 13) >>> 0))) >>> 0);
+    x = ((x ^ ((x >>> 17))) >>> 0);
+    x = ((x ^ (((x << 5) >>> 0))) >>> 0);
+  }
+  return x;
 }

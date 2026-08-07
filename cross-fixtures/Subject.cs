@@ -234,4 +234,100 @@ public static class Subject
         } while (i < 100);
         return i;
     }
+
+    // ---------------------------------------------------------------------
+    // uint32. JS has no unsigned 32-bit type, so every one of these used to
+    // diverge above 2^31 — and `UDiv` diverged at any value at all, since a
+    // bare `a / b` is a float divide. Full-range uint sampling (see
+    // FixtureGenerator) is what keeps these honest.
+    // ---------------------------------------------------------------------
+
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 60)]
+    [CrossTestCase(0u, 1u)]
+    [CrossTestCase(uint.MaxValue, 1u)]
+    [CrossTestCase(2147483648u, 2147483648u)]
+    public static uint UAdd(uint a, uint b) => a + b;
+
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 61)]
+    [CrossTestCase(0u, 1u)]
+    [CrossTestCase(1u, 2u)]
+    [CrossTestCase(uint.MaxValue, uint.MaxValue)]
+    public static uint USub(uint a, uint b) => a - b;
+
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 62)]
+    [CrossTestCase(65536u, 65536u)]
+    [CrossTestCase(uint.MaxValue, 3u)]
+    [CrossTestCase(2147483648u, 2u)]
+    public static uint UMul(uint a, uint b) => a * b;
+
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 63)]
+    [CrossTestCase(7u, 2u)]
+    [CrossTestCase(uint.MaxValue, 7u)]
+    [CrossTestCase(1u, 0u)]
+    public static uint UDiv(uint a, uint b) => b == 0 ? 0u : a / b;
+
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 64)]
+    [CrossTestCase(7u, 2u)]
+    [CrossTestCase(uint.MaxValue, 7u)]
+    [CrossTestCase(1u, 0u)]
+    public static uint UMod(uint a, uint b) => b == 0 ? 0u : a % b;
+
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 65)]
+    [CrossTestCase(1u, 31)]
+    [CrossTestCase(2147483648u, 1)]
+    public static uint UShl(uint a, int n) => a << n;
+
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 66)]
+    [CrossTestCase(2147483648u, 17)]
+    [CrossTestCase(uint.MaxValue, 17)]
+    [CrossTestCase(uint.MaxValue, 0)]
+    public static uint UShr(uint a, int n) => a >> n;
+
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 67)]
+    [CrossTestCase(2147483648u, 2147483648u)]
+    public static uint UAnd(uint a, uint b) => a & b;
+
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 68)]
+    [CrossTestCase(2147483648u, 1u)]
+    public static uint UOr(uint a, uint b) => a | b;
+
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 69)]
+    [CrossTestCase(2147483648u, 2147483648u)]
+    public static uint UXor(uint a, uint b) => a ^ b;
+
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 70)]
+    [CrossTestCase(0u)]
+    [CrossTestCase(uint.MaxValue)]
+    public static uint UNot(uint a) => ~a;
+
+    // Post-increment expands into a wrapped assignment; uint.MaxValue is the
+    // case a bare `x++` gets wrong.
+    [Transpile, GenerateCrossTest(Samples = 16, Seed = 71)]
+    [CrossTestCase(uint.MaxValue)]
+    [CrossTestCase(0u)]
+    public static uint UIncrement(uint a)
+    {
+        uint x = a;
+        x++;
+        x++;
+        return x;
+    }
+
+    // The shape that started this — textbook uint xorshift32, 64 rounds so any
+    // single-bit divergence compounds into a completely different value.
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 72)]
+    [CrossTestCase(1u)]
+    [CrossTestCase(uint.MaxValue)]
+    [CrossTestCase(2147483648u)]
+    public static uint UXorshift32(uint seed)
+    {
+        uint x = seed == 0u ? 1u : seed;
+        for (int i = 0; i < 64; i++)
+        {
+            x = x ^ (x << 13);
+            x = x ^ (x >> 17);
+            x = x ^ (x << 5);
+        }
+        return x;
+    }
 }

@@ -522,6 +522,9 @@ public static partial class TranspilerEngine
         public bool IsInt32(ExpressionSyntax expr) =>
             TypeOf(expr)?.SpecialType == SpecialType.System_Int32;
 
+        public bool IsUInt32(ExpressionSyntax expr) =>
+            TypeOf(expr)?.SpecialType == SpecialType.System_UInt32;
+
         public bool IsInt64(ExpressionSyntax expr) =>
             TypeOf(expr)?.SpecialType == SpecialType.System_Int64;
 
@@ -1998,9 +2001,18 @@ public static partial class TranspilerEngine
             case BinaryExpressionSyntax bin:
                 return EmitBinary(bin, ctx);
             case PrefixUnaryExpressionSyntax pre:
-                return $"{MapPrefixUnaryOperator(pre.OperatorToken)}{EmitExpression(pre.Operand, ctx)}";
+                {
+                    var raw = $"{MapPrefixUnaryOperator(pre.OperatorToken)}{EmitExpression(pre.Operand, ctx)}";
+                    // `~` on uint yields a signed int32 in JS — reinterpret it
+                    // back to uint32. int32 `~` is already int32-correct.
+                    if (pre.OperatorToken.IsKind(SyntaxKind.TildeToken) && ctx.IsUInt32(pre))
+                    {
+                        return $"(({raw}) >>> 0)";
+                    }
+                    return raw;
+                }
             case PostfixUnaryExpressionSyntax post:
-                return $"{EmitExpression(post.Operand, ctx)}{MapPostfixUnaryOperator(post.OperatorToken)}";
+                return EmitPostfixUnary(post, ctx);
             case ConditionalExpressionSyntax cond:
                 return $"{EmitExpression(cond.Condition, ctx)} ? {EmitExpression(cond.WhenTrue, ctx)} : {EmitExpression(cond.WhenFalse, ctx)}";
             case AssignmentExpressionSyntax assign:
@@ -3537,6 +3549,24 @@ public static partial class TranspilerEngine
             };
             return $"{left} = {combined}";
         }
+        // uint32 compound assignment — same reasoning as the uint branch in
+        // EmitBinary: expand to `a = ((a op b) >>> 0)` so the result stays in
+        // uint32 land instead of going negative or fractional.
+        if (op != SyntaxKind.EqualsToken && ctx.IsUInt32(assign.Left))
+        {
+            var left = EmitExpression(assign.Left, ctx);
+            var right = EmitExpression(assign.Right, ctx);
+            string combined = op switch
+            {
+                SyntaxKind.PlusEqualsToken => $"(({left} + {right}) >>> 0)",
+                SyntaxKind.MinusEqualsToken => $"(({left} - {right}) >>> 0)",
+                SyntaxKind.AsteriskEqualsToken => $"(Math.imul({left}, {right}) >>> 0)",
+                SyntaxKind.SlashEqualsToken => $"(({left} / {right}) >>> 0)",
+                SyntaxKind.PercentEqualsToken => $"(({left} % {right}) >>> 0)",
+                _ => throw new NotSupportedException($"Unsupported compound assignment: {op}"),
+            };
+            return $"{left} = {combined}";
+        }
         // long / ulong compound assignment — BigInt.asIntN / asUintN wrap to
         // mimic the 64-bit C# overflow semantics.
         if (op != SyntaxKind.EqualsToken && (ctx.IsInt64(assign.Left) || ctx.IsUInt64(assign.Left)))
@@ -3605,6 +3635,39 @@ public static partial class TranspilerEngine
                 "*" => $"Math.imul({left}, {right})",
                 _ => $"(({left} {op} {right}) | 0)",
             };
+        }
+
+        // uint32. JS has no unsigned 32-bit numeric type: `+ - * /` produce an
+        // unbounded double and the bitwise / shift operators produce a *signed*
+        // int32, so every uint result needs an explicit `>>> 0` to land back in
+        // uint32 land. Without it `(uint)0 - 1` emits as `-1` where C# gives
+        // 4294967295, and `7u / 2u` stays 3.5.
+        if (ctx.IsUInt32(bin))
+        {
+            switch (bin.OperatorToken.Kind())
+            {
+                // Math.imul keeps the low 32 bits exact past 2^53 (a plain `*`
+                // loses mantissa bits); its result is signed, hence the wrap.
+                case SyntaxKind.AsteriskToken:
+                    return $"(Math.imul({left}, {right}) >>> 0)";
+                // C# uint division truncates toward zero. Both operands are
+                // non-negative here, so `>>> 0` is both the truncation and the
+                // wrap in one step.
+                case SyntaxKind.SlashToken:
+                    return $"(({left} / {right}) >>> 0)";
+                // C# `>>` on uint is a *logical* shift; JS `>>` is arithmetic
+                // and would sign-extend anything at or above 2^31.
+                case SyntaxKind.GreaterThanGreaterThanToken:
+                    return $"({left} >>> {right})";
+                case SyntaxKind.PlusToken:
+                case SyntaxKind.MinusToken:
+                case SyntaxKind.PercentToken:
+                case SyntaxKind.LessThanLessThanToken:
+                case SyntaxKind.AmpersandToken:
+                case SyntaxKind.BarToken:
+                case SyntaxKind.CaretToken:
+                    return $"(({left} {op} {right}) >>> 0)";
+            }
         }
 
         // Bigint shift in C# allows `ulong << int` / `long << int`. TS BigInt
@@ -3754,6 +3817,42 @@ public static partial class TranspilerEngine
             SyntaxKind.MinusMinusToken => "--",
             _ => throw new NotSupportedException($"Unsupported postfix unary operator: {op.Kind()}"),
         };
+    }
+
+    /// <summary>
+    /// True when a post-increment/decrement's result value is thrown away, so
+    /// rewriting it into a plain assignment preserves the program's meaning.
+    /// `x++` evaluates to the *old* value; the rewrite evaluates to the new
+    /// one, which only stops mattering when nobody reads it.
+    /// </summary>
+    static bool IsPostfixValueDiscarded(PostfixUnaryExpressionSyntax post) =>
+        post.Parent is ExpressionStatementSyntax
+        || (post.Parent is ForStatementSyntax forStmt && forStmt.Incrementors.Contains(post));
+
+    static string EmitPostfixUnary(PostfixUnaryExpressionSyntax post, EmitContext ctx)
+    {
+        var operand = EmitExpression(post.Operand, ctx);
+
+        // uint `x++` in JS keeps counting past 2^32 (and `x--` goes negative)
+        // where C# wraps. Expand into the wrapped assignment form. int32 is
+        // deliberately left alone here — it has the same hole at int.MaxValue
+        // but expanding it would rewrite every `for (…; i++)` in every emit,
+        // so that trade-off is tracked separately.
+        if (ctx.IsUInt32(post.Operand))
+        {
+            if (!IsPostfixValueDiscarded(post))
+            {
+                throw new NotSupportedException(
+                    $"`{post}` reads the value of a uint post-increment/decrement. Mirrorgen "
+                    + "expands these into a wrapped assignment to match C# overflow semantics, "
+                    + "and that form yields the new value rather than the old one. Split it "
+                    + "into two statements.");
+            }
+            var delta = post.OperatorToken.IsKind(SyntaxKind.PlusPlusToken) ? "+" : "-";
+            return $"{operand} = (({operand} {delta} 1) >>> 0)";
+        }
+
+        return $"{operand}{MapPostfixUnaryOperator(post.OperatorToken)}";
     }
 
     static string EmitLiteral(LiteralExpressionSyntax lit)
