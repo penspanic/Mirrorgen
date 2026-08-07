@@ -17,14 +17,17 @@ CONFIG="${CONFIG:-Debug}"
 
 RULES_PROJECT="$SAMPLE_DIR/Rules/Rules.csproj"
 
-echo "[1/2] Building Rules.csproj (MSBuild target emits TS + fixtures) ($CONFIG)..."
+echo "[1/3] Building Rules.csproj (MSBuild target emits TS + fixtures) ($CONFIG)..."
 dotnet build "$RULES_PROJECT" -c "$CONFIG" --nologo -v minimal
 
-echo "[2/2] Running vitest..."
+echo "[2/3] Typechecking the emit (noUncheckedIndexedAccess is on)..."
 cd "$SAMPLE_DIR/client"
 if [ ! -d node_modules ]; then
     npm install --silent
 fi
+npm run --silent typecheck
+
+echo "[3/3] Running vitest..."
 npm test
 
 echo "Done."

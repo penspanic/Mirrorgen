@@ -36,3 +36,15 @@ export function ApplyDiscount(total: number, discountPct: number): number {
   let pct: number = discountPct < 0 ? 0 : (discountPct > 100 ? 100 : discountPct);
   return ((Math.imul(total, (((100 - pct) | 0))) / 100) | 0);
 }
+
+export function TierTotal(tier: number): number {
+  let tiers: number[] = [100, 250, 500, 1000];
+  if (tier < 0 || tier >= tiers.length) {
+    return 0;
+  }
+  let total: number = 0;
+  for (let i: number = 0; i <= tier; i++) {
+    total = ((total + tiers[i]!) | 0);
+  }
+  return total;
+}

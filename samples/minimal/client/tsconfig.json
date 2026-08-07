@@ -4,6 +4,7 @@
         "module": "es2022",
         "moduleResolution": "bundler",
         "strict": true,
+        "types": ["node"],
         "noUncheckedIndexedAccess": true,
         "esModuleInterop": true,
         "skipLibCheck": true,
