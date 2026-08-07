@@ -2139,10 +2139,13 @@ public static partial class TranspilerEngine
                     {
                         return literal;
                     }
-                    // Static field/property of a [Transpile] type: the walker
-                    // emits these at module scope (`export const Invalid = …`)
-                    // — drop the type prefix so `CellId.Invalid` resolves to
-                    // the bare `Invalid` const.
+                    // Static field/property of a [Transpile] type. Where it
+                    // ends up depends on how the declaring type emits: a
+                    // class-shape type keeps its statics in the class body, so
+                    // `Proj.Instance` stays qualified. Everything else is
+                    // hoisted to module scope, so `CellId.Invalid` resolves to
+                    // a bare `Invalid`. Either way the emit name wins, so a
+                    // static renamed to dodge a collision stays reachable.
                     if (ctx.SymbolFor(member) is { } memberSym
                         && memberSym.IsStatic
                         && memberSym.ContainingType is { } memberOwner
@@ -2150,9 +2153,10 @@ public static partial class TranspilerEngine
                         && memberOwner.TypeKind != TypeKind.Enum
                         && (memberSym.Kind == SymbolKind.Field || memberSym.Kind == SymbolKind.Property))
                     {
-                        // …under its emit name, so a static renamed to dodge a
-                        // module-scope collision stays reachable from call sites.
-                        return ReadEmitNameFromSymbol(memberSym) ?? memberName;
+                        var staticEmitName = ReadEmitNameFromSymbol(memberSym) ?? memberName;
+                        return IsClassShapeFromSymbol(memberOwner)
+                            ? $"{memberOwner.Name}.{staticEmitName}"
+                            : staticEmitName;
                     }
                     return $"{EmitExpression(member.Expression, ctx)}.{memberName}";
                 }
@@ -2684,6 +2688,20 @@ public static partial class TranspilerEngine
             {
                 return "this." + raw;
             }
+        }
+        // Static fields / properties of a class-shape type live in the class
+        // body, so a bare reference from a method of that same class has to be
+        // qualified: `Table[i]` becomes `Holder.Table[i]`. (`this.` would work
+        // for instance access but not from a static member, and the class name
+        // reads the same in both.)
+        if (sym is { IsStatic: true }
+            && (sym.Kind == SymbolKind.Field || sym.Kind == SymbolKind.Property)
+            && sym.ContainingType is { } staticOwner
+            && staticOwner.TypeKind != TypeKind.Enum
+            && IsTranspileType(staticOwner)
+            && IsClassShapeFromSymbol(staticOwner))
+        {
+            return $"{staticOwner.Name}.{raw}";
         }
         return raw;
     }
@@ -4153,6 +4171,12 @@ public static partial class TranspilerEngine
         // const block emits *after* the class so e.g. `export const Instance =
         // new T()` doesn't trip TS's no-use-before-declaration rule on the
         // class identifier.
+        // Statics on a class-shape type live in the class body, so
+        // `Proj.Instance` and `Ortho.Instance` namespace themselves instead of
+        // both landing on a module-scope `Instance`. Types that emit as an
+        // interface (records / structs) have nowhere to put a static, so those
+        // keep the module-scope const — and can still collide, which is what
+        // the aggregator's collision check is for.
         var staticFold = new StringBuilder();
         foreach (var member in decl.Members)
         {
@@ -4180,23 +4204,15 @@ public static partial class TranspilerEngine
                 }
                 if (initEmit is null) continue;
                 var tsType = MapType(field.Declaration.Type, ctx);
-                var isPublic = field.Modifiers.Any(SyntaxKind.PublicKeyword);
-                var keyword = isPublic ? "export const " : "const ";
                 // Honour [Transpile(EmitName = "…")] here the same way the
                 // record/interface path does. These statics get hoisted to
                 // module scope, where two classes each declaring `Instance`
                 // collide on one identifier — EmitName is the documented way
                 // out of that, so it has to actually take effect.
                 var emitName = ReadEmitName(field.AttributeLists) ?? v.Identifier.Text;
-                staticFold.Append(keyword).Append(emitName)
+                staticFold.Append(BodyIndent).Append("static ").Append(emitName)
                   .Append(": ").Append(tsType)
                   .Append(" = ").Append(initEmit).AppendLine(";");
-                // Separate consecutive const declarations with a blank line so
-                // the aggregator's block-splitter (which yields on blank lines)
-                // treats each `const X = …;` as its own top-level export. Without
-                // this, every const after the first gets dedupe-folded into the
-                // first one's block and silently dropped at aggregate time.
-                staticFold.AppendLine();
             }
         }
 
@@ -4222,6 +4238,13 @@ public static partial class TranspilerEngine
         }
 
         sb.AppendLine(" {");
+        if (staticFold.Length > 0)
+        {
+            // A static initializer may reference the class it belongs to
+            // (`static Instance = new Proj()`); the class binding is live by
+            // the time static field initializers run, so this is well-formed.
+            sb.Append(staticFold);
+        }
 
         var bodyIndent = BodyIndent;
         var bodyIndent2 = BodyIndent + BodyIndent;
@@ -4470,11 +4493,6 @@ public static partial class TranspilerEngine
         }
 
         sb.AppendLine("}");
-        if (staticFold.Length > 0)
-        {
-            sb.AppendLine();
-            sb.Append(staticFold);
-        }
         return sb.ToString();
     }
 
