@@ -330,4 +330,88 @@ public static class Subject
         }
         return x;
     }
+
+    // ---------------------------------------------------------------------
+    // Bitwise compound assignment and `>>>`. Both were build errors before,
+    // so bit-twiddling code had to be written longhand.
+    // ---------------------------------------------------------------------
+
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 80)]
+    [CrossTestCase(int.MinValue, 0)]
+    [CrossTestCase(-1, 0)]
+    [CrossTestCase(-1, 1)]
+    [CrossTestCase(int.MinValue, 31)]
+    public static int IntUnsignedShift(int x, int n) => x >>> n;
+
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 81)]
+    [CrossTestCase(uint.MaxValue, 0)]
+    [CrossTestCase(2147483648u, 17)]
+    public static uint UIntUnsignedShift(uint x, int n) => x >>> n;
+
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 82)]
+    [CrossTestCase(int.MinValue, int.MaxValue)]
+    public static int IntBitCompound(int a, int b)
+    {
+        int x = a;
+        x ^= b;
+        x &= b;
+        x |= b;
+        x <<= 3;
+        x >>= 2;
+        x >>>= 1;
+        return x;
+    }
+
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 83)]
+    [CrossTestCase(uint.MaxValue, 2147483648u)]
+    public static uint UIntBitCompound(uint a, uint b)
+    {
+        uint x = a;
+        x ^= b;
+        x &= b;
+        x |= b;
+        x <<= 3;
+        x >>= 2;
+        return x;
+    }
+
+    // Textbook xorshift32 — now writable with `^=` instead of longhand.
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 84)]
+    [CrossTestCase(1u)]
+    [CrossTestCase(uint.MaxValue)]
+    [CrossTestCase(2147483648u)]
+    public static uint XorshiftCompound(uint seed)
+    {
+        uint x = seed == 0u ? 1u : seed;
+        for (int i = 0; i < 64; i++)
+        {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+        }
+        return x;
+    }
+
+    // C# masks 64-bit shift counts to their low 6 bits; JS BigInt does not.
+    // Full-range int counts here — an unmasked emit both diverges and hangs
+    // the JS side trying to build a multi-gigabit integer.
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 85)]
+    [CrossTestCase(1L, 0)]
+    [CrossTestCase(1L, 63)]
+    [CrossTestCase(1L, 64)]
+    [CrossTestCase(1L, 100)]
+    [CrossTestCase(-1L, 65)]
+    public static long LongShiftCount(long a, int n) => a << n;
+
+    [Transpile, GenerateCrossTest(Samples = 24, Seed = 86)]
+    [CrossTestCase(1L, 64)]
+    [CrossTestCase(-1L, 100)]
+    public static long LongShiftCompound(long a, int n)
+    {
+        long x = a;
+        x <<= n;
+        x >>= n;
+        x ^= a;
+        return x;
+    }
 }
