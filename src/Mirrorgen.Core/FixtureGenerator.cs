@@ -272,7 +272,11 @@ public static class FixtureGenerator
         if (t == typeof(short)) return (short)rng.Next(short.MinValue, short.MaxValue + 1);
         if (t == typeof(byte)) return (byte)rng.Next(0, 256);
         if (t == typeof(sbyte)) return (sbyte)rng.Next(sbyte.MinValue, sbyte.MaxValue + 1);
-        if (t == typeof(uint)) return (uint)rng.Next(0, 10_001);
+        // uint spans its full range, same as int. A narrow 0..10000 window here
+        // meant no random sample ever crossed 2^31, which is exactly where the
+        // JS emit used to diverge — the sampler was hiding the bug it exists
+        // to catch.
+        if (t == typeof(uint)) return unchecked((uint)rng.Next(int.MinValue, int.MaxValue));
         if (t == typeof(ushort)) return (ushort)rng.Next(0, ushort.MaxValue + 1);
         if (t == typeof(bool)) return rng.Next(2) == 0;
         if (t == typeof(float)) return (float)(rng.NextDouble() * 200.0 - 100.0);
