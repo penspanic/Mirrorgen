@@ -35,6 +35,7 @@
                        AssemblyPath="$(TargetPath)"
                        MirrorgenConfig="$(MirrorgenConfig)"
                        AggregateOutputFile="$(MirrorgenAggregateOutputFile)"
+                       ImportExtension="$(MirrorgenImportExtension)"
                        EmitValidators="$(MirrorgenEmitValidators)"
                        WgslOutputFile="$(MirrorgenWgslOutput)"
                        WgslTypes="@(MirrorgenWgslType)"

@@ -109,6 +109,20 @@ your client and config:
 </PropertyGroup>
 ```
 
+One `.ts` is emitted per C# source file, and a call that crosses files gets an
+`import`. The module specifier ends in `.js` by default — that is what
+Node16 / NodeNext ESM requires, and bundler / classic resolution accept it too.
+Override it if your consumer wants something else:
+
+```xml
+<MirrorgenImportExtension>.ts</MirrorgenImportExtension>   <!-- allowImportingTsExtensions -->
+<MirrorgenImportExtension>none</MirrorgenImportExtension>  <!-- extensionless -->
+```
+
+To collapse the whole project into a single module instead, set
+`<MirrorgenAggregateOutputFile>index.ts</MirrorgenAggregateOutputFile>`; file
+boundaries disappear and no imports are emitted.
+
 ```csharp
 // Domain type mapping plugin
 public sealed class MirrorgenConfig : IMirrorgenExtension

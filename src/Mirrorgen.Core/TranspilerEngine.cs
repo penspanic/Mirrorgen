@@ -44,6 +44,21 @@ public static partial class TranspilerEngine
         => TranspileTree(tree, compilation, registry, TranspileOptions.Default);
 
     public static string TranspileTree(SyntaxTree tree, CSharpCompilation compilation, TypeMappingRegistry registry, TranspileOptions options)
+        => TranspileTree(tree, compilation, registry, options, out _);
+
+    /// <summary>
+    /// As above, and also reports the [Transpile] methods this tree calls that
+    /// are declared in a sibling tree. Types reachable from a sibling are
+    /// inlined into the emit; methods are not, so a per-file emit needs an
+    /// import for each of these or the module references an identifier that
+    /// does not exist.
+    /// </summary>
+    public static string TranspileTree(
+        SyntaxTree tree,
+        CSharpCompilation compilation,
+        TypeMappingRegistry registry,
+        TranspileOptions options,
+        out IReadOnlyList<ExternalMethodRef> externalCalls)
     {
         // Attribute recognition resolves symbols rather than matching names, so
         // the scans below need the model — see IsTranspileAttributeSyntax.
@@ -144,6 +159,7 @@ public static partial class TranspilerEngine
             }
             if (!hasOwnTranspileEntry)
             {
+                externalCalls = System.Array.Empty<ExternalMethodRef>();
                 return string.Empty;
             }
         }
@@ -312,6 +328,7 @@ public static partial class TranspilerEngine
                 body = body.TrimEnd() + Environment.NewLine + Environment.NewLine + validators;
             }
         }
+        externalCalls = ctx.ExternalCalls;
         return PrependHelpers(ctx, body);
     }
 
@@ -509,6 +526,16 @@ public static partial class TranspilerEngine
             _model = model;
             Registry = registry;
         }
+
+        public SyntaxTree CurrentTree => _model.SyntaxTree;
+
+        /// <summary>
+        /// [Transpile] methods this tree calls that are declared in a sibling
+        /// tree. Types reachable from a sibling are inlined into the emit, but
+        /// methods are not — they need an import, and without one the emitted
+        /// module references an identifier that does not exist.
+        /// </summary>
+        public List<ExternalMethodRef> ExternalCalls { get; } = new();
 
         public ITypeSymbol? TypeOf(ExpressionSyntax expr)
         {
@@ -2676,6 +2703,30 @@ public static partial class TranspilerEngine
         return false;
     }
 
+    /// <summary>
+    /// A [Transpile] method that lives in a different source file than the one
+    /// being emitted. BatchTranspiler turns these into import statements.
+    /// </summary>
+    public sealed record ExternalMethodRef(string EmitName, string DeclaringFilePath);
+
+    static void RecordExternalCall(IMethodSymbol target, string emitName, EmitContext ctx)
+    {
+        foreach (var sref in target.DeclaringSyntaxReferences)
+        {
+            if (sref.SyntaxTree == ctx.CurrentTree) return;
+        }
+        // No syntax at all (metadata-only) — nothing we could import.
+        var declaring = target.DeclaringSyntaxReferences.FirstOrDefault();
+        if (declaring is null) return;
+        var path = declaring.SyntaxTree.FilePath;
+        if (string.IsNullOrEmpty(path)) return;
+        foreach (var existing in ctx.ExternalCalls)
+        {
+            if (existing.EmitName == emitName && existing.DeclaringFilePath == path) return;
+        }
+        ctx.ExternalCalls.Add(new ExternalMethodRef(emitName, path));
+    }
+
     static bool IsTranspileType(INamedTypeSymbol type)
     {
         foreach (var attr in type.GetAttributes())
@@ -3080,6 +3131,7 @@ public static partial class TranspilerEngine
         // Honour `[Transpile(EmitName="…")]` on the resolved method so call
         // sites follow a renamed declaration.
         var emitName = ReadEmitNameFromSymbol(target) ?? target.Name;
+        RecordExternalCall(target, emitName, ctx);
 
         // Extension methods reify the receiver as the first explicit arg:
         // `face.Normal()` → `Normal(face)` (the C# `this CubeFace face`

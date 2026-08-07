@@ -42,6 +42,15 @@ public sealed class MirrorgenTask : Microsoft.Build.Utilities.Task
     public string AggregateOutputFile { get; set; } = string.Empty;
 
     /// <summary>
+    /// Extension used in the module specifier of emitted cross-file imports.
+    /// Defaults to ".js", which is what Node16 / NodeNext ESM requires and
+    /// what bundler / classic resolution also accept. Set to ".ts" for a
+    /// consumer with `allowImportingTsExtensions`, or to "none" for
+    /// extensionless specifiers.
+    /// </summary>
+    public string ImportExtension { get; set; } = string.Empty;
+
+    /// <summary>
     /// When true, append lightweight parseX(value) validators to the emitted
     /// TypeScript output. The validators normalize omitted nullable members to
     /// null so parsed wire documents satisfy the generated interface contract.
@@ -90,6 +99,13 @@ public sealed class MirrorgenTask : Microsoft.Build.Utilities.Task
             {
                 AggregateOutputFile = string.IsNullOrEmpty(AggregateOutputFile) ? null : AggregateOutputFile,
                 EmitValidators = EmitValidators,
+                // MSBuild cannot carry an intentionally empty string through a
+                // property, so "none" is the spelling for "no extension".
+                ImportExtension = string.IsNullOrEmpty(ImportExtension)
+                    ? new TranspileOptions().ImportExtension
+                    : (string.Equals(ImportExtension, "none", System.StringComparison.OrdinalIgnoreCase)
+                        ? string.Empty
+                        : ImportExtension),
             };
             var result = BatchTranspiler.TranspileFiles(files, SourceRoot, OutputDirectory, registry, options);
             Log.LogMessage(
