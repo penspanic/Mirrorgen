@@ -567,5 +567,118 @@
         "expected": 15600746
       }
     ]
+  },
+  {
+    "name": "TierTotal",
+    "calls": [
+      {
+        "args": [
+          0
+        ],
+        "expected": 100
+      },
+      {
+        "args": [
+          4
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          726643699
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          564707972
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          -995276752
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          314199521
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          1280186416
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          2094996836
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          150139959
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          1035109841
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          -2070529656
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          -1744901506
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          -1033499270
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          -1797287536
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          -407958654
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          -500027563
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          -1992608018
+        ],
+        "expected": 0
+      },
+      {
+        "args": [
+          70895483
+        ],
+        "expected": 0
+      }
+    ]
   }
 ]

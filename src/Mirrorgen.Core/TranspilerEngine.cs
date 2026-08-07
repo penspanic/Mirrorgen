@@ -2190,7 +2190,13 @@ public static partial class TranspilerEngine
                 {
                     var indices = string.Join(", ",
                         ea.ArgumentList.Arguments.Select(a => EmitExpression(a.Expression, ctx)));
-                    return $"{EmitExpression(ea.Expression, ctx)}[{indices}]";
+                    var access = $"{EmitExpression(ea.Expression, ctx)}[{indices}]";
+                    // Under `noUncheckedIndexedAccess` an element read is typed
+                    // `T | undefined`, which fails to typecheck everywhere the
+                    // C# said `T`. The index was already proven in-range by the
+                    // C# side, so assert it. Write targets keep the bare form —
+                    // `xs[i]! = v` is a syntax error.
+                    return IsElementWriteTarget(ea) ? access : $"{access}!";
                 }
             case CastExpressionSyntax cast:
                 return EmitCast(cast, ctx);
@@ -3308,6 +3314,16 @@ public static partial class TranspilerEngine
             emit = $"{receiver}.includes({args})";
             return true;
         }
+        // `List<T>.ToArray()` — both sides are `T[]` in TS, so only the copy
+        // semantics need reproducing. (Returning the list as `IReadOnlyList<T>`
+        // avoids the copy entirely and is usually the better shape, but
+        // `ToArray()` is reflexive enough in C# that hitting a build error on
+        // it reads as List support being half-finished.)
+        if (target.Name == "ToArray" && inv.ArgumentList.Arguments.Count == 0)
+        {
+            emit = $"{receiver}.slice()";
+            return true;
+        }
         return false;
     }
 
@@ -3536,6 +3552,16 @@ public static partial class TranspilerEngine
         };
     }
 
+    /// <summary>
+    /// A compound assignment expands to `a = ((a op b) …)`, which writes the
+    /// target *and* reads it. The write side stays bare, but the read side is
+    /// an ordinary element read and needs the same non-null assertion one gets
+    /// anywhere else — otherwise `xs[i] += 1` fails to typecheck under
+    /// `noUncheckedIndexedAccess`.
+    /// </summary>
+    static string ReadFormOfAssignmentTarget(ExpressionSyntax target, string emitted) =>
+        target is ElementAccessExpressionSyntax ? emitted + "!" : emitted;
+
     static string EmitAssignment(AssignmentExpressionSyntax assign, EmitContext ctx)
     {
         var op = assign.OperatorToken.Kind();
@@ -3545,25 +3571,26 @@ public static partial class TranspilerEngine
         if (op != SyntaxKind.EqualsToken && ctx.IsInt32(assign.Left))
         {
             var left = EmitExpression(assign.Left, ctx);
+            var read = ReadFormOfAssignmentTarget(assign.Left, left);
             var right = EmitExpression(assign.Right, ctx);
             string combined = op switch
             {
-                SyntaxKind.PlusEqualsToken => $"(({left} + {right}) | 0)",
-                SyntaxKind.MinusEqualsToken => $"(({left} - {right}) | 0)",
-                SyntaxKind.AsteriskEqualsToken => $"Math.imul({left}, {right})",
-                SyntaxKind.SlashEqualsToken => $"(({left} / {right}) | 0)",
-                SyntaxKind.PercentEqualsToken => $"(({left} % {right}) | 0)",
+                SyntaxKind.PlusEqualsToken => $"(({read} + {right}) | 0)",
+                SyntaxKind.MinusEqualsToken => $"(({read} - {right}) | 0)",
+                SyntaxKind.AsteriskEqualsToken => $"Math.imul({read}, {right})",
+                SyntaxKind.SlashEqualsToken => $"(({read} / {right}) | 0)",
+                SyntaxKind.PercentEqualsToken => $"(({read} % {right}) | 0)",
                 // Bitwise / shift compounds need no wrap on int32: JS `& | ^`
                 // and `<< >>` already produce an int32 from int32 operands, so
                 // the plain compound form is exact.
-                SyntaxKind.AmpersandEqualsToken => $"({left} & {right})",
-                SyntaxKind.BarEqualsToken => $"({left} | {right})",
-                SyntaxKind.CaretEqualsToken => $"({left} ^ {right})",
-                SyntaxKind.LessThanLessThanEqualsToken => $"({left} << {right})",
-                SyntaxKind.GreaterThanGreaterThanEqualsToken => $"({left} >> {right})",
+                SyntaxKind.AmpersandEqualsToken => $"({read} & {right})",
+                SyntaxKind.BarEqualsToken => $"({read} | {right})",
+                SyntaxKind.CaretEqualsToken => $"({read} ^ {right})",
+                SyntaxKind.LessThanLessThanEqualsToken => $"({read} << {right})",
+                SyntaxKind.GreaterThanGreaterThanEqualsToken => $"({read} >> {right})",
                 // `>>>=` is the exception — JS `>>>` yields an unsigned value,
                 // so it has to come back to int32. See the binary `>>>` branch.
-                SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken => $"(({left} >>> {right}) | 0)",
+                SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken => $"(({read} >>> {right}) | 0)",
                 _ => throw new NotSupportedException($"Unsupported compound assignment: {op}"),
             };
             return $"{left} = {combined}";
@@ -3574,22 +3601,23 @@ public static partial class TranspilerEngine
         if (op != SyntaxKind.EqualsToken && ctx.IsUInt32(assign.Left))
         {
             var left = EmitExpression(assign.Left, ctx);
+            var read = ReadFormOfAssignmentTarget(assign.Left, left);
             var right = EmitExpression(assign.Right, ctx);
             string combined = op switch
             {
-                SyntaxKind.PlusEqualsToken => $"(({left} + {right}) >>> 0)",
-                SyntaxKind.MinusEqualsToken => $"(({left} - {right}) >>> 0)",
-                SyntaxKind.AsteriskEqualsToken => $"(Math.imul({left}, {right}) >>> 0)",
-                SyntaxKind.SlashEqualsToken => $"(({left} / {right}) >>> 0)",
-                SyntaxKind.PercentEqualsToken => $"(({left} % {right}) >>> 0)",
-                SyntaxKind.AmpersandEqualsToken => $"(({left} & {right}) >>> 0)",
-                SyntaxKind.BarEqualsToken => $"(({left} | {right}) >>> 0)",
-                SyntaxKind.CaretEqualsToken => $"(({left} ^ {right}) >>> 0)",
-                SyntaxKind.LessThanLessThanEqualsToken => $"(({left} << {right}) >>> 0)",
+                SyntaxKind.PlusEqualsToken => $"(({read} + {right}) >>> 0)",
+                SyntaxKind.MinusEqualsToken => $"(({read} - {right}) >>> 0)",
+                SyntaxKind.AsteriskEqualsToken => $"(Math.imul({read}, {right}) >>> 0)",
+                SyntaxKind.SlashEqualsToken => $"(({read} / {right}) >>> 0)",
+                SyntaxKind.PercentEqualsToken => $"(({read} % {right}) >>> 0)",
+                SyntaxKind.AmpersandEqualsToken => $"(({read} & {right}) >>> 0)",
+                SyntaxKind.BarEqualsToken => $"(({read} | {right}) >>> 0)",
+                SyntaxKind.CaretEqualsToken => $"(({read} ^ {right}) >>> 0)",
+                SyntaxKind.LessThanLessThanEqualsToken => $"(({read} << {right}) >>> 0)",
                 // C# `>>` on uint is already logical, so both shift-right
                 // compounds land on the same JS operator.
-                SyntaxKind.GreaterThanGreaterThanEqualsToken => $"({left} >>> {right})",
-                SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken => $"({left} >>> {right})",
+                SyntaxKind.GreaterThanGreaterThanEqualsToken => $"({read} >>> {right})",
+                SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken => $"({read} >>> {right})",
                 _ => throw new NotSupportedException($"Unsupported compound assignment: {op}"),
             };
             return $"{left} = {combined}";
@@ -3599,6 +3627,7 @@ public static partial class TranspilerEngine
         if (op != SyntaxKind.EqualsToken && (ctx.IsInt64(assign.Left) || ctx.IsUInt64(assign.Left)))
         {
             var left = EmitExpression(assign.Left, ctx);
+            var read = ReadFormOfAssignmentTarget(assign.Left, left);
             var right = EmitExpression(assign.Right, ctx);
             var wrap = ctx.IsInt64(assign.Left) ? "BigInt.asIntN(64" : "BigInt.asUintN(64";
             string binaryOp = op switch
@@ -3630,7 +3659,7 @@ public static partial class TranspilerEngine
             {
                 right = $"BigInt({right} & 63)";
             }
-            return $"{left} = {wrap}, {left} {binaryOp} {right})";
+            return $"{left} = {wrap}, {read} {binaryOp} {right})";
         }
         return $"{EmitExpression(assign.Left, ctx)} {MapAssignmentOperator(assign.OperatorToken)} {EmitExpression(assign.Right, ctx)}";
     }
@@ -3897,6 +3926,32 @@ public static partial class TranspilerEngine
             SyntaxKind.MinusMinusToken => "--",
             _ => throw new NotSupportedException($"Unsupported postfix unary operator: {op.Kind()}"),
         };
+    }
+
+    /// <summary>
+    /// True when an element access is being written to rather than read, in
+    /// which case it must stay a plain reference — TypeScript rejects a
+    /// non-null assertion on the left of an assignment.
+    /// </summary>
+    static bool IsElementWriteTarget(ElementAccessExpressionSyntax ea)
+    {
+        switch (ea.Parent)
+        {
+            // `xs[i] = v`, `xs[i] += v`
+            case AssignmentExpressionSyntax assign when assign.Left == ea:
+            // `xs[i]++` / `xs[i]--`
+            case PostfixUnaryExpressionSyntax:
+                return true;
+            case PrefixUnaryExpressionSyntax pre
+                when pre.OperatorToken.IsKind(SyntaxKind.PlusPlusToken)
+                  || pre.OperatorToken.IsKind(SyntaxKind.MinusMinusToken):
+                return true;
+            // `Foo(ref xs[i])` / `Foo(out xs[i])` — written through.
+            case ArgumentSyntax arg when !arg.RefKindKeyword.IsKind(SyntaxKind.None):
+                return true;
+            default:
+                return false;
+        }
     }
 
     /// <summary>

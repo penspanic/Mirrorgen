@@ -40,7 +40,9 @@ public class GenericMethodTests
             }
             """);
         Assert.Contains("export function First<T>(xs: T[]): T {", ts);
-        Assert.Contains("return xs[0];", ts);
+        // Element reads carry a non-null assertion so the emit still typechecks
+        // under `noUncheckedIndexedAccess`, where `xs[0]` is `T | undefined`.
+        Assert.Contains("return xs[0]!;", ts);
     }
 
     [Fact]

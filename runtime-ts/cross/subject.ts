@@ -147,10 +147,10 @@ export function WrapMul(a: number, b: number): number {
 export function CountTwoKeys(map: Record<string, number>, a: string, b: string): number {
   let sum: number = 0;
   if ((a in map)) {
-    sum = ((sum + map[a]) | 0);
+    sum = ((sum + map[a]!) | 0);
   }
   if ((b in map)) {
-    sum = ((sum + map[b]) | 0);
+    sum = ((sum + map[b]!) | 0);
   }
   return sum;
 }

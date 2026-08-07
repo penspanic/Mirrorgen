@@ -72,4 +72,18 @@ public static class Pricing
         int pct = discountPct < 0 ? 0 : (discountPct > 100 ? 100 : discountPct);
         return total * (100 - pct) / 100;
     }
+
+    // Array indexing — the emit carries `!` on element reads so the generated
+    // TS still typechecks under the client's `noUncheckedIndexedAccess`.
+    [Transpile, GenerateCrossTest(Samples = 16, Seed = 5)]
+    [CrossTestCase(0)]
+    [CrossTestCase(4)]
+    public static int TierTotal(int tier)
+    {
+        var tiers = new int[] { 100, 250, 500, 1000 };
+        if (tier < 0 || tier >= tiers.Length) return 0;
+        int total = 0;
+        for (int i = 0; i <= tier; i++) total += tiers[i];
+        return total;
+    }
 }

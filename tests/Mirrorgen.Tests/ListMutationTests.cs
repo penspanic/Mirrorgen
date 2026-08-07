@@ -91,4 +91,22 @@ public class ListMutationTests
                 }
                 """));
     }
+
+    [Fact]
+    public void ListToArray_Emits_Slice()
+    {
+        // Both sides are `T[]` in TS, so only the copy needs reproducing.
+        var ts = TranspilerEngine.TranspileSource("""
+            using System.Collections.Generic;
+            public static class S {
+                [Mirrorgen.Attributes.Transpile]
+                public static int[] F(int n) {
+                    var xs = new List<int>();
+                    for (int i = 0; i < n; i++) xs.Add(i);
+                    return xs.ToArray();
+                }
+            }
+            """);
+        Assert.Contains("return xs.slice();", ts);
+    }
 }
