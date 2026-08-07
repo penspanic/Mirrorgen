@@ -3526,6 +3526,12 @@ public static partial class TranspilerEngine
             SyntaxKind.AsteriskEqualsToken => "*=",
             SyntaxKind.SlashEqualsToken => "/=",
             SyntaxKind.PercentEqualsToken => "%=",
+            SyntaxKind.AmpersandEqualsToken => "&=",
+            SyntaxKind.BarEqualsToken => "|=",
+            SyntaxKind.CaretEqualsToken => "^=",
+            SyntaxKind.LessThanLessThanEqualsToken => "<<=",
+            SyntaxKind.GreaterThanGreaterThanEqualsToken => ">>=",
+            SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken => ">>>=",
             _ => throw new NotSupportedException($"Unsupported assignment operator: {op.Kind()}"),
         };
     }
@@ -3547,6 +3553,17 @@ public static partial class TranspilerEngine
                 SyntaxKind.AsteriskEqualsToken => $"Math.imul({left}, {right})",
                 SyntaxKind.SlashEqualsToken => $"(({left} / {right}) | 0)",
                 SyntaxKind.PercentEqualsToken => $"(({left} % {right}) | 0)",
+                // Bitwise / shift compounds need no wrap on int32: JS `& | ^`
+                // and `<< >>` already produce an int32 from int32 operands, so
+                // the plain compound form is exact.
+                SyntaxKind.AmpersandEqualsToken => $"({left} & {right})",
+                SyntaxKind.BarEqualsToken => $"({left} | {right})",
+                SyntaxKind.CaretEqualsToken => $"({left} ^ {right})",
+                SyntaxKind.LessThanLessThanEqualsToken => $"({left} << {right})",
+                SyntaxKind.GreaterThanGreaterThanEqualsToken => $"({left} >> {right})",
+                // `>>>=` is the exception — JS `>>>` yields an unsigned value,
+                // so it has to come back to int32. See the binary `>>>` branch.
+                SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken => $"(({left} >>> {right}) | 0)",
                 _ => throw new NotSupportedException($"Unsupported compound assignment: {op}"),
             };
             return $"{left} = {combined}";
@@ -3565,6 +3582,14 @@ public static partial class TranspilerEngine
                 SyntaxKind.AsteriskEqualsToken => $"(Math.imul({left}, {right}) >>> 0)",
                 SyntaxKind.SlashEqualsToken => $"(({left} / {right}) >>> 0)",
                 SyntaxKind.PercentEqualsToken => $"(({left} % {right}) >>> 0)",
+                SyntaxKind.AmpersandEqualsToken => $"(({left} & {right}) >>> 0)",
+                SyntaxKind.BarEqualsToken => $"(({left} | {right}) >>> 0)",
+                SyntaxKind.CaretEqualsToken => $"(({left} ^ {right}) >>> 0)",
+                SyntaxKind.LessThanLessThanEqualsToken => $"(({left} << {right}) >>> 0)",
+                // C# `>>` on uint is already logical, so both shift-right
+                // compounds land on the same JS operator.
+                SyntaxKind.GreaterThanGreaterThanEqualsToken => $"({left} >>> {right})",
+                SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken => $"({left} >>> {right})",
                 _ => throw new NotSupportedException($"Unsupported compound assignment: {op}"),
             };
             return $"{left} = {combined}";
@@ -3583,8 +3608,28 @@ public static partial class TranspilerEngine
                 SyntaxKind.AsteriskEqualsToken => "*",
                 SyntaxKind.SlashEqualsToken => "/",
                 SyntaxKind.PercentEqualsToken => "%",
+                SyntaxKind.AmpersandEqualsToken => "&",
+                SyntaxKind.BarEqualsToken => "|",
+                SyntaxKind.CaretEqualsToken => "^",
+                SyntaxKind.LessThanLessThanEqualsToken => "<<",
+                SyntaxKind.GreaterThanGreaterThanEqualsToken => ">>",
+                // JS BigInt has no `>>>`; an unsigned shift over an
+                // arbitrary-precision integer has no meaning without a fixed
+                // width, and asUintN would have to be applied to the operand
+                // rather than the result. Reject rather than approximate.
+                SyntaxKind.GreaterThanGreaterThanGreaterThanEqualsToken => throw new NotSupportedException(
+                    "`>>>=` on long / ulong is not supported: JS BigInt has no unsigned right shift. "
+                    + "Cast to uint, or mask explicitly."),
                 _ => throw new NotSupportedException($"Unsupported compound assignment: {op}"),
             };
+            // Shift counts must be bigint on the JS side; C# takes an int. The
+            // `& 63` mirrors C#'s masking of 64-bit shift counts, which JS
+            // BigInt does not do — see the matching note in EmitBinary.
+            if (op is SyntaxKind.LessThanLessThanEqualsToken or SyntaxKind.GreaterThanGreaterThanEqualsToken
+                && !(ctx.IsInt64(assign.Right) || ctx.IsUInt64(assign.Right)))
+            {
+                right = $"BigInt({right} & 63)";
+            }
             return $"{left} = {wrap}, {left} {binaryOp} {right})";
         }
         return $"{EmitExpression(assign.Left, ctx)} {MapAssignmentOperator(assign.OperatorToken)} {EmitExpression(assign.Right, ctx)}";
@@ -3639,6 +3684,26 @@ public static partial class TranspilerEngine
             };
         }
 
+        // C# 11 `>>>`. JS `>>>` yields an *unsigned* 32-bit value while C#
+        // `int >>> n` yields an int. For n >= 1 the top bit is zero either way,
+        // but `x >>> 0` is the identity in C# (so it stays negative) and forces
+        // unsigned in JS — `| 0` reconciles both without special-casing n.
+        // BigInt has no `>>>` at all, so 64-bit operands are rejected rather
+        // than approximated.
+        if (bin.OperatorToken.IsKind(SyntaxKind.GreaterThanGreaterThanGreaterThanToken))
+        {
+            if (ctx.IsInt64(bin) || ctx.IsUInt64(bin))
+            {
+                throw new NotSupportedException(
+                    "`>>>` on long / ulong is not supported: JS BigInt has no unsigned right shift. "
+                    + "Cast to uint, or mask explicitly.");
+            }
+            if (ctx.IsInt32(bin))
+            {
+                return $"(({left} >>> {right}) | 0)";
+            }
+        }
+
         // uint32. JS has no unsigned 32-bit numeric type: `+ - * /` produce an
         // unbounded double and the bitwise / shift operators produce a *signed*
         // int32, so every uint result needs an explicit `>>> 0` to land back in
@@ -3658,8 +3723,10 @@ public static partial class TranspilerEngine
                 case SyntaxKind.SlashToken:
                     return $"(({left} / {right}) >>> 0)";
                 // C# `>>` on uint is a *logical* shift; JS `>>` is arithmetic
-                // and would sign-extend anything at or above 2^31.
+                // and would sign-extend anything at or above 2^31. `>>>` on a
+                // uint means the same thing, so both land here.
                 case SyntaxKind.GreaterThanGreaterThanToken:
+                case SyntaxKind.GreaterThanGreaterThanGreaterThanToken:
                     return $"({left} >>> {right})";
                 case SyntaxKind.PlusToken:
                 case SyntaxKind.MinusToken:
@@ -3700,7 +3767,13 @@ public static partial class TranspilerEngine
                     or SpecialType.System_UInt32 or SpecialType.System_UInt16;
             if (lhsIsBigInt && IsNumberSpecial(rhsType))
             {
-                right = $"BigInt({right})";
+                // C# masks a 64-bit shift count to its low 6 bits, so
+                // `1L << 64` is `1L`. JS BigInt does not mask — `1n << 64n`
+                // really is 2^64, which asIntN(64) then truncates to 0, and a
+                // large count (shift counts are ints, so they routinely are)
+                // makes the engine try to materialise a multi-gigabit integer
+                // and hang. Apply C#'s mask explicitly.
+                right = isShift ? $"BigInt({right} & 63)" : $"BigInt({right})";
             }
             // Shifts read the LHS as the bigint side — never swap the
             // operands. For non-shift bitwise/arithmetic, the operation is
@@ -3734,10 +3807,14 @@ public static partial class TranspilerEngine
     static bool IsUInt64Arithmetic(BinaryExpressionSyntax bin, EmitContext ctx) =>
         IsIntegerArithmeticOperator(bin.OperatorToken.Kind()) && ctx.IsUInt64(bin);
 
+    // Operators whose 64-bit result needs an asIntN / asUintN wrap. `<<` is
+    // here because JS BigInt is arbitrary-precision: `1n << 63n` is 2^63,
+    // where C# `1L << 63` is long.MinValue. `>>` and the bitwise operators are
+    // not — their result is always within the range of an in-range operand.
     static bool IsIntegerArithmeticOperator(SyntaxKind k) =>
         k is SyntaxKind.PlusToken or SyntaxKind.MinusToken
           or SyntaxKind.AsteriskToken or SyntaxKind.SlashToken
-          or SyntaxKind.PercentToken;
+          or SyntaxKind.PercentToken or SyntaxKind.LessThanLessThanToken;
 
     static bool IsInt32Arithmetic(BinaryExpressionSyntax bin, EmitContext ctx)
     {
@@ -3790,6 +3867,7 @@ public static partial class TranspilerEngine
             SyntaxKind.CaretToken => "^",
             SyntaxKind.LessThanLessThanToken => "<<",
             SyntaxKind.GreaterThanGreaterThanToken => ">>",
+            SyntaxKind.GreaterThanGreaterThanGreaterThanToken => ">>>",
             // `a ?? b` — JS ES2020 nullish coalescing. Matches C# semantics on
             // null / undefined receivers. C# nullable structs lower to `null`
             // on the JS side, so the operator behaves identically for the

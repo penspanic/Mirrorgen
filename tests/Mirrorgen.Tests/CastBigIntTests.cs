@@ -77,13 +77,18 @@ public class CastBigIntTests
     }
 
     [Fact]
-    public void BigInt_RightShift_By_Int_Promotes_Too()
+    public void BigInt_RightShift_By_Int_Promotes_And_Masks_The_Count()
     {
+        // The count is promoted to bigint *and* masked to its low 6 bits. C#
+        // masks 64-bit shift counts (`1L << 64` == `1L`); JS BigInt does not,
+        // so an unmasked `1n << 64n` is really 2^64 — which asIntN(64) then
+        // truncates to 0. Worse, shift counts are ints, so a large one makes
+        // the engine try to build a multi-gigabit integer and hang.
         var ts = Transpile(
             "return t >> n;",
             returnType: "ulong",
             paramList: "ulong t, int n");
-        Assert.Contains("t >> BigInt(n)", ts);
+        Assert.Contains("t >> BigInt(n & 63)", ts);
     }
 
     [Fact]

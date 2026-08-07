@@ -266,3 +266,54 @@ export function UXorshift32(seed: number): number {
   }
   return x;
 }
+
+export function IntUnsignedShift(x: number, n: number): number {
+  return ((x >>> n) | 0);
+}
+
+export function UIntUnsignedShift(x: number, n: number): number {
+  return (x >>> n);
+}
+
+export function IntBitCompound(a: number, b: number): number {
+  let x: number = a;
+  x = (x ^ b);
+  x = (x & b);
+  x = (x | b);
+  x = (x << 3);
+  x = (x >> 2);
+  x = ((x >>> 1) | 0);
+  return x;
+}
+
+export function UIntBitCompound(a: number, b: number): number {
+  let x: number = a;
+  x = ((x ^ b) >>> 0);
+  x = ((x & b) >>> 0);
+  x = ((x | b) >>> 0);
+  x = ((x << 3) >>> 0);
+  x = (x >>> 2);
+  return x;
+}
+
+export function XorshiftCompound(seed: number): number {
+  let x: number = seed === 0 ? 1 : seed;
+  for (let i: number = 0; i < 64; i++) {
+    x = ((x ^ ((x << 13) >>> 0)) >>> 0);
+    x = ((x ^ (x >>> 17)) >>> 0);
+    x = ((x ^ ((x << 5) >>> 0)) >>> 0);
+  }
+  return x;
+}
+
+export function LongShiftCount(a: bigint, n: number): bigint {
+  return BigInt.asIntN(64, a << BigInt(n & 63));
+}
+
+export function LongShiftCompound(a: bigint, n: number): bigint {
+  let x: bigint = a;
+  x = BigInt.asIntN(64, x << BigInt(n & 63));
+  x = BigInt.asIntN(64, x >> BigInt(n & 63));
+  x = BigInt.asIntN(64, x ^ a);
+  return x;
+}
