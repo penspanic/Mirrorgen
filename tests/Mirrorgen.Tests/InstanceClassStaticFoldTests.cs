@@ -8,11 +8,11 @@ public class InstanceClassStaticFoldTests
     [Fact]
     public void Multiple_Private_Static_Fields_All_Survive_Aggregation()
     {
-        // Pre-fix the EmitInstanceClass static-fold packed every `const X = …;`
-        // into a single block (no blank-line separators), then the aggregator's
-        // block-splitter folded the whole block under the header's name —
-        // dropping every const after the first. Each declaration now gets its
-        // own blank-line-bounded block.
+        // Statics on a class-shape type are members of the emitted class, so
+        // all three survive regardless of how the aggregator splits blocks —
+        // they are not top-level declarations at all any more. (They used to
+        // be module-scope consts, where a packed block made the aggregator drop
+        // every one after the first.)
         var src = """
             using System;
             using Mirrorgen;
@@ -27,17 +27,18 @@ public class InstanceClassStaticFoldTests
             }
             """;
         var ts = TranspilerEngine.TranspileSource(src);
-        Assert.Contains("const Alpha: V = { X: 1, Y: 0, Z: 0 };", ts);
-        Assert.Contains("const Beta: V = { X: 0, Y: 1, Z: 0 };", ts);
-        Assert.Contains("const Gamma: V = { X: 0, Y: 0, Z: 1 };", ts);
+        Assert.Contains("static Alpha: V = { X: 1, Y: 0, Z: 0 };", ts);
+        Assert.Contains("static Beta: V = { X: 0, Y: 1, Z: 0 };", ts);
+        Assert.Contains("static Gamma: V = { X: 0, Y: 0, Z: 1 };", ts);
     }
 
     [Fact]
-    public void Instance_Singleton_Emits_After_Class_Definition()
+    public void Instance_Singleton_Is_A_Static_Member_Of_Its_Class()
     {
-        // `export const Instance = new T();` has to land *after* `export class T`
-        // — TS rejects use-before-declaration on the class identifier even though
-        // JS hoists class definitions at runtime.
+        // The singleton belongs to the class rather than to module scope, so
+        // `Proj.Instance` namespaces itself. A static initializer that
+        // references its own class is well-formed — the class binding is live
+        // by the time static field initializers run.
         var src = """
             using System;
             using Mirrorgen;
@@ -48,11 +49,33 @@ public class InstanceClassStaticFoldTests
             }
             """;
         var ts = TranspilerEngine.TranspileSource(src);
-        var classIdx = ts.IndexOf("export class Proj");
-        var instanceIdx = ts.IndexOf("export const Instance: Proj = new Proj()");
-        Assert.True(classIdx >= 0, "class declaration missing");
-        Assert.True(instanceIdx >= 0, "Instance declaration missing");
-        Assert.True(instanceIdx > classIdx,
-            $"Instance must follow class declaration (class @ {classIdx}, instance @ {instanceIdx})");
+        Assert.Contains("export class Proj {", ts);
+        Assert.Contains("static Instance: Proj = new Proj();", ts);
+        Assert.DoesNotContain("export const Instance", ts);
+    }
+
+    [Fact]
+    public void Class_Statics_Are_Reachable_From_Inside_And_Outside()
+    {
+        // Moving statics into the class body means a bare reference from one of
+        // the class's own methods has to be qualified too, or it resolves to
+        // nothing.
+        var src = """
+            using Mirrorgen;
+            namespace X;
+            [Transpile]
+            public sealed class Holder {
+                private static readonly int[] Table = new int[] { 1, 2, 3 };
+                public static readonly Holder Instance = new();
+                public int Pick(int i) => Table[i];
+            }
+            public static class Uses {
+                [Transpile] public static int Go(int i) => Holder.Instance.Pick(i);
+            }
+            """;
+        var ts = TranspilerEngine.TranspileSource(src);
+        Assert.Contains("static Table: number[] = [1, 2, 3];", ts);
+        Assert.Contains("return Holder.Table[i]!;", ts);
+        Assert.Contains("return Holder.Instance.Pick(i);", ts);
     }
 }

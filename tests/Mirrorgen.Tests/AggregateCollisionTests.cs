@@ -39,13 +39,12 @@ public class AggregateCollisionTests : IDisposable
     }
 
     [Fact]
-    public void Colliding_Static_Singletons_Fail_Instead_Of_Silently_Dropping_One()
+    public void Class_Shape_Singletons_No_Longer_Collide()
     {
-        // Each class hoists `static readonly T Instance` to module scope, so
-        // both land on the identifier `Instance`. This used to emit only
-        // EquirectangularProjection's — OrthographicProjection.Instance simply
-        // vanished and consumers had to call `new OrthographicProjection()`.
-        var ex = Assert.Throws<NotSupportedException>(() => Aggregate(
+        // These used to be two module-scope `const Instance`, so only the first
+        // survived. Statics on a class-shape type are members of their class
+        // now, which namespaces them without anyone having to intervene.
+        var all = Aggregate(
             ("A.cs", """
                 using Mirrorgen;
                 namespace X;
@@ -63,13 +62,39 @@ public class AggregateCollisionTests : IDisposable
                     public static readonly OrthographicProjection Instance = new();
                     public int Project(int x) => x * 3;
                 }
+                """));
+
+        Assert.Contains("static Instance: EquirectangularProjection = new EquirectangularProjection();", all);
+        Assert.Contains("static Instance: OrthographicProjection = new OrthographicProjection();", all);
+        Assert.DoesNotContain("export const Instance", all);
+    }
+
+    [Fact]
+    public void Colliding_Module_Scope_Statics_Fail_Instead_Of_Silently_Dropping_One()
+    {
+        // Interface-shape types (records / structs) have nowhere to put a
+        // static, so theirs still hoist to module scope — and two of them can
+        // still land on one identifier. Dropping the second silently is what
+        // this guards against.
+        var ex = Assert.Throws<NotSupportedException>(() => Aggregate(
+            ("A.cs", """
+                using Mirrorgen;
+                namespace X;
+                [Transpile] public readonly record struct CellId(int Value) {
+                    public static readonly CellId Invalid = default;
+                }
+                """),
+            ("B.cs", """
+                using Mirrorgen;
+                namespace X;
+                [Transpile] public readonly record struct EdgeId(int Value) {
+                    public static readonly EdgeId Invalid = default;
+                }
                 """)));
 
-        Assert.Contains("'Instance'", ex.Message);
-        // The message has to name both sides — knowing only that "something
-        // called Instance collided" doesn't tell you where to put EmitName.
-        Assert.Contains("EquirectangularProjection", ex.Message);
-        Assert.Contains("OrthographicProjection", ex.Message);
+        Assert.Contains("'Invalid'", ex.Message);
+        Assert.Contains("CellId", ex.Message);
+        Assert.Contains("EdgeId", ex.Message);
         Assert.Contains("EmitName", ex.Message);
     }
 
@@ -80,26 +105,22 @@ public class AggregateCollisionTests : IDisposable
             ("A.cs", """
                 using Mirrorgen;
                 namespace X;
-                [Transpile]
-                public sealed class EquirectangularProjection {
-                    [Transpile(EmitName = "EquirectangularInstance")]
-                    public static readonly EquirectangularProjection Instance = new();
-                    public int Project(int x) => x * 2;
+                [Transpile] public readonly record struct CellId(int Value) {
+                    [Transpile(EmitName = "CellIdInvalid")]
+                    public static readonly CellId Invalid = default;
                 }
                 """),
             ("B.cs", """
                 using Mirrorgen;
                 namespace X;
-                [Transpile]
-                public sealed class OrthographicProjection {
-                    [Transpile(EmitName = "OrthographicInstance")]
-                    public static readonly OrthographicProjection Instance = new();
-                    public int Project(int x) => x * 3;
+                [Transpile] public readonly record struct EdgeId(int Value) {
+                    [Transpile(EmitName = "EdgeIdInvalid")]
+                    public static readonly EdgeId Invalid = default;
                 }
                 """));
 
-        Assert.Contains("EquirectangularInstance", all);
-        Assert.Contains("OrthographicInstance", all);
+        Assert.Contains("CellIdInvalid", all);
+        Assert.Contains("EdgeIdInvalid", all);
     }
 
     [Fact]
