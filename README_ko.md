@@ -108,6 +108,19 @@ dotnet add package Mirrorgen.MSBuild
 </PropertyGroup>
 ```
 
+C# 소스 파일 하나당 `.ts` 하나가 나오고, 파일을 넘는 호출에는 `import` 가 붙습니다.
+module specifier 의 확장자는 기본이 `.js` 입니다 — Node16 / NodeNext ESM 이 요구하는
+형태이고 bundler / classic 해석도 그대로 받습니다. 소비자가 다른 걸 원하면 바꿉니다:
+
+```xml
+<MirrorgenImportExtension>.ts</MirrorgenImportExtension>   <!-- allowImportingTsExtensions -->
+<MirrorgenImportExtension>none</MirrorgenImportExtension>  <!-- 확장자 없음 -->
+```
+
+프로젝트 전체를 모듈 하나로 접으려면
+`<MirrorgenAggregateOutputFile>index.ts</MirrorgenAggregateOutputFile>` 를 씁니다.
+파일 경계가 사라지고 import 는 나오지 않습니다.
+
 ```csharp
 // 도메인 타입 매핑 plugin
 public sealed class MirrorgenConfig : IMirrorgenExtension

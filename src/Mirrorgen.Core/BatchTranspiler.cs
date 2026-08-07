@@ -51,9 +51,17 @@ public static class BatchTranspiler
         int written = 0;
         int skipped = 0;
         var aggregateBuffer = options.AggregateOutputFile is null ? null : new List<string>();
+        // Source path -> emitted .ts path, relative to the output directory.
+        // Needed to turn a cross-file call into a module specifier.
+        var relBySourcePath = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var (path, rel, _) in fileList)
+        {
+            relBySourcePath[path] = Path.ChangeExtension(rel, ".ts");
+        }
+
         foreach (var (path, rel, tree) in fileList)
         {
-            var ts = TranspilerEngine.TranspileTree(tree, compilation, registry, options);
+            var ts = TranspilerEngine.TranspileTree(tree, compilation, registry, options, out var externals);
             if (string.IsNullOrEmpty(ts))
             {
                 skipped++;
@@ -62,8 +70,14 @@ public static class BatchTranspiler
 
             if (aggregateBuffer is not null)
             {
+                // One module: file boundaries disappear, so nothing to import.
                 aggregateBuffer.Add(ts);
                 continue;
+            }
+
+            if (externals.Count > 0)
+            {
+                ts = BuildImportHeader(externals, Path.ChangeExtension(rel, ".ts"), relBySourcePath, options.ImportExtension) + ts;
             }
 
             var outFile = Path.Combine(dst, Path.ChangeExtension(rel, ".ts"));
@@ -87,6 +101,72 @@ public static class BatchTranspiler
         }
 
         return new Result(written, skipped);
+    }
+
+    /// <summary>
+    /// Turns the cross-file [Transpile] calls a tree makes into import
+    /// statements. Without these the emitted module calls an identifier that
+    /// was never declared or imported — the build stays green and the failure
+    /// surfaces at run time.
+    /// </summary>
+    static string BuildImportHeader(
+        IReadOnlyList<TranspilerEngine.ExternalMethodRef> externals,
+        string selfRelativeTsPath,
+        Dictionary<string, string> relBySourcePath,
+        string importExtension)
+    {
+        var byModule = new SortedDictionary<string, SortedSet<string>>(StringComparer.Ordinal);
+        foreach (var ext in externals)
+        {
+            if (!relBySourcePath.TryGetValue(ext.DeclaringFilePath, out var targetRelTs))
+            {
+                // Declared outside the set of files being transpiled — there is
+                // no emitted module to point at, so leave it alone rather than
+                // inventing a specifier.
+                continue;
+            }
+            var specifier = ToModuleSpecifier(selfRelativeTsPath, targetRelTs, importExtension);
+            if (!byModule.TryGetValue(specifier, out var names))
+            {
+                names = new SortedSet<string>(StringComparer.Ordinal);
+                byModule[specifier] = names;
+            }
+            names.Add(ext.EmitName);
+        }
+        if (byModule.Count == 0) return string.Empty;
+
+        var sb = new StringBuilder();
+        foreach (var (specifier, names) in byModule)
+        {
+            sb.Append("import { ").Append(string.Join(", ", names))
+              .Append(" } from '").Append(specifier).AppendLine("';");
+        }
+        sb.AppendLine();
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Relative module specifier from one emitted .ts to another, always
+    /// explicitly relative ('./' or '../') so it is never mistaken for a
+    /// package name.
+    /// </summary>
+    static string ToModuleSpecifier(string selfRelativeTsPath, string targetRelativeTsPath, string importExtension)
+    {
+        var selfDir = Path.GetDirectoryName(selfRelativeTsPath);
+        var rel = string.IsNullOrEmpty(selfDir)
+            ? targetRelativeTsPath
+            : Path.GetRelativePath(selfDir, targetRelativeTsPath);
+        rel = rel.Replace(Path.DirectorySeparatorChar, '/').Replace(Path.AltDirectorySeparatorChar, '/');
+        if (rel.EndsWith(".ts", System.StringComparison.Ordinal))
+        {
+            rel = rel[..^3] + importExtension;
+        }
+        if (!rel.StartsWith("./", System.StringComparison.Ordinal) &&
+            !rel.StartsWith("../", System.StringComparison.Ordinal))
+        {
+            rel = "./" + rel;
+        }
+        return rel;
     }
 
     // Aggregated emit — folds N per-tree .ts outputs into a single string,

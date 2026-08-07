@@ -21,5 +21,19 @@ public sealed class TranspileOptions
     /// </summary>
     public string? AggregateOutputFile { get; init; }
 
+    /// <summary>
+    /// Extension used in the module specifier of emitted cross-file imports.
+    ///
+    /// The emitted .ts is library code that ships to npm consumers, so the
+    /// default is what the strictest of them needs: Node16 / NodeNext ESM
+    /// requires a `.js` specifier and resolves it back to the `.ts`. Bundler
+    /// and classic resolution accept that too, so `.js` is the only value that
+    /// works everywhere unmodified.
+    ///
+    /// Set to <c>".ts"</c> for a consumer with `allowImportingTsExtensions`,
+    /// or to the empty string for extensionless specifiers.
+    /// </summary>
+    public string ImportExtension { get; init; } = ".js";
+
     public static TranspileOptions Default { get; } = new();
 }
