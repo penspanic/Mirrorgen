@@ -11,7 +11,7 @@ public class WgslCompositeTests
     static string Wgsl(string members) =>
         TranspilerEngine.TranspileSourceToWgsl($$"""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 {{members}}
             }
             """);
@@ -108,7 +108,7 @@ public class WgslCompositeTests
         var wgsl = TranspilerEngine.TranspileSourceToWgsl("""
             public static class Enc { public const byte BedrockTileId = 1; }
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int Pick(int tile) {
                     if (tile == Enc.BedrockTileId) { return 7; }
                     return 0;

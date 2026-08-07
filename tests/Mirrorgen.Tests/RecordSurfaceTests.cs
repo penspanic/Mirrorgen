@@ -9,7 +9,7 @@ public class RecordSurfaceTests
     public void RecordStruct_Emits_As_Interface()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record struct Point(int X, int Y);
             """);
         Assert.Contains("export interface Point {", ts);
@@ -21,7 +21,7 @@ public class RecordSurfaceTests
     public void Sealed_Record_Has_No_Special_Marker()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public sealed record Sealed(int X);
             """);
         Assert.Contains("export interface Sealed {", ts);
@@ -34,7 +34,7 @@ public class RecordSurfaceTests
     public void Struct_Emits_As_Interface()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public struct Vec2 {
                 public int X { get; init; }
                 public int Y { get; init; }
@@ -50,9 +50,9 @@ public class RecordSurfaceTests
         // Matches TsGen behaviour — derived emits only its own params.
         // Base interface is emitted separately (when [Transpile]-marked).
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Base(int X);
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Derived(int Y) : Base(0);
             """);
         Assert.Contains("export interface Base {", ts);
@@ -75,9 +75,9 @@ public class RecordSurfaceTests
         // TopologyParams`) reference the base by name. The empty interface
         // keeps TS resolution working, matching TsGen's behaviour.
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public abstract record TopologyParams;
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public sealed record PlanarTopologyParams(double CellSize) : TopologyParams;
             """);
         Assert.Contains("export interface TopologyParams {", ts);
@@ -92,7 +92,7 @@ public class RecordSurfaceTests
         // the symbol level. Mirrorgen should emit exactly one interface that
         // combines members from both halves.
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public partial class Foo {
                 public int A { get; init; }
             }

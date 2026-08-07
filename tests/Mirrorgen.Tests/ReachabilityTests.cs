@@ -13,7 +13,7 @@ public class ReachabilityTests
         var ts = TranspilerEngine.TranspileSource("""
             public record OrderLine(int Quantity);
 
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public class Cart
             {
                 public OrderLine[] Lines { get; set; } = new OrderLine[0];
@@ -29,7 +29,7 @@ public class ReachabilityTests
         var ts = TranspilerEngine.TranspileSource("""
             public enum DiscountKind { None, Flat, Pct }
 
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Discount(DiscountKind Kind, int Amount);
             """);
         Assert.Contains("export enum DiscountKind {", ts);
@@ -44,7 +44,7 @@ public class ReachabilityTests
 
             public static class S
             {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int CountUnits(OrderLine line) => line.Quantity;
             }
             """);
@@ -58,7 +58,7 @@ public class ReachabilityTests
         var ts = TranspilerEngine.TranspileSource("""
             public record Unused(int X);
 
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Used(int Y);
             """);
         Assert.Contains("export interface Used", ts);
@@ -72,7 +72,7 @@ public class ReachabilityTests
             public record Leaf(int Value);
             public record Branch(Leaf[] Leaves);
 
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Root(Branch Branch);
             """);
         Assert.Contains("export interface Root", ts);

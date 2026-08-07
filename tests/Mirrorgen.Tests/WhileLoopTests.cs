@@ -10,7 +10,7 @@ public class WhileLoopTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int Sum(int n) {
                     int i = 0;
                     int total = 0;
@@ -32,7 +32,7 @@ public class WhileLoopTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int CountDown(int n) {
                     int i = n;
                     do {
@@ -52,7 +52,7 @@ public class WhileLoopTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int FindFirst(int n) {
                     int i = 0;
                     while (i < 100) {
@@ -72,7 +72,7 @@ public class WhileLoopTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int SkipEvens(int n) {
                     int i = 0;
                     int sum = 0;

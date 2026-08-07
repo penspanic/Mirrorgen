@@ -11,7 +11,7 @@ public class WgslScalarTests
     static string Wgsl(string members) =>
         TranspilerEngine.TranspileSourceToWgsl($$"""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 {{members}}
             }
             """);

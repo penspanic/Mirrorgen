@@ -45,7 +45,10 @@ public static partial class TranspilerEngine
 
     public static string TranspileTree(SyntaxTree tree, CSharpCompilation compilation, TypeMappingRegistry registry, TranspileOptions options)
     {
-        var ctx = new EmitContext(compilation.GetSemanticModel(tree), registry);
+        // Attribute recognition resolves symbols rather than matching names, so
+        // the scans below need the model — see IsTranspileAttributeSyntax.
+        var semantics = compilation.GetSemanticModel(tree);
+        var ctx = new EmitContext(semantics, registry);
 
         // Index every type/method declaration in every tree so the
         // reachability scan can resolve identifier references back to their
@@ -86,7 +89,7 @@ public static partial class TranspilerEngine
             bool hasOwnTranspileEntry = false;
             foreach (var m in methods)
             {
-                if (HasTranspileAttribute(m.AttributeLists))
+                if (HasTranspileAttribute(m.AttributeLists, semantics))
                 {
                     hasOwnTranspileEntry = true;
                     break;
@@ -101,7 +104,7 @@ public static partial class TranspilerEngine
                 // they emit as a TS class even without static members.
                 foreach (var classNode in tree.GetCompilationUnitRoot().DescendantNodes().OfType<ClassDeclarationSyntax>())
                 {
-                    if (!HasTranspileAttribute(classNode.AttributeLists)) continue;
+                    if (!HasTranspileAttribute(classNode.AttributeLists, semantics)) continue;
                     if (HasAnyPublicStaticMember(classNode) || HasInstanceClassShape(classNode))
                     {
                         hasOwnTranspileEntry = true;
@@ -118,7 +121,7 @@ public static partial class TranspilerEngine
                 foreach (var typeNode in tree.GetCompilationUnitRoot().DescendantNodes())
                 {
                     if (typeNode is RecordDeclarationSyntax or StructDeclarationSyntax or EnumDeclarationSyntax &&
-                        HasTranspileAttribute(TypeAttributeLists(typeNode)))
+                        HasTranspileAttribute(TypeAttributeLists(typeNode), semantics))
                     {
                         hasOwnTranspileEntry = true;
                         break;
@@ -158,7 +161,7 @@ public static partial class TranspilerEngine
         foreach (var node in tree.GetCompilationUnitRoot().DescendantNodes())
         {
             var attrs = TypeAttributeLists(node);
-            var hasAttr = attrs.Count > 0 && HasTranspileAttribute(attrs);
+            var hasAttr = attrs.Count > 0 && HasTranspileAttribute(attrs, semantics);
             // Directory-marker scan: public types in path-matched files behave
             // as if they had [Transpile] — but only for *type-only* emission
             // (TsGen-equivalent "shape only" semantics; methods are NOT
@@ -188,7 +191,7 @@ public static partial class TranspilerEngine
         }
         foreach (var m in methods)
         {
-            if (HasTranspileAttribute(m.AttributeLists))
+            if (HasTranspileAttribute(m.AttributeLists, semantics))
             {
                 if (emit.Add(m)) queue.Enqueue(m);
             }
@@ -204,7 +207,7 @@ public static partial class TranspilerEngine
             // Only index methods inside types that themselves have class- /
             // struct- / record-level [Transpile] — otherwise an unrelated
             // helper type would get pulled in by name collision.
-            if (!HasTranspileAttribute(tds.AttributeLists)) continue;
+            if (!HasTranspileAttribute(tds.AttributeLists, semantics)) continue;
             if (tds is not ClassDeclarationSyntax and not StructDeclarationSyntax and not RecordDeclarationSyntax) continue;
             foreach (var m in tds.Members.OfType<MethodDeclarationSyntax>())
             {
@@ -665,23 +668,58 @@ public static partial class TranspilerEngine
     }
 
     static bool HasTranspileAttribute(SyntaxList<AttributeListSyntax> attributeLists)
+        => HasTranspileAttribute(attributeLists, null);
+
+    static bool HasTranspileAttribute(SyntaxList<AttributeListSyntax> attributeLists, SemanticModel? model)
     {
         foreach (var list in attributeLists)
         {
             foreach (var attr in list.Attributes)
             {
-                if (IsTranspileAttributeSyntax(attr)) return true;
+                if (IsTranspileAttributeSyntax(attr, model)) return true;
             }
         }
         return false;
     }
 
     static bool IsTranspileAttributeSyntax(AttributeSyntax attr)
+        => IsTranspileAttributeSyntax(attr, null);
+
+    /// <summary>
+    /// Whether an attribute is Mirrorgen's `[Transpile]`.
+    ///
+    /// The name test alone cannot tell `[Mirrorgen.Transpile]` from a
+    /// same-named attribute in someone else's namespace, and it happily
+    /// accepts a namespace that does not exist. Type-level checks resolve the
+    /// symbol (see <see cref="IsTranspileType"/>), so a name-only check here
+    /// made the same attribute mean different things depending on where it was
+    /// written — a class-level one would be ignored while a method-level one
+    /// was honoured. Resolve the symbol whenever a model is available.
+    /// </summary>
+    static bool IsTranspileAttributeSyntax(AttributeSyntax attr, SemanticModel? model)
     {
         var n = attr.Name.ToString();
-        return n == "Transpile" || n == "TranspileAttribute" ||
-               n.EndsWith(".Transpile", StringComparison.Ordinal) ||
-               n.EndsWith(".TranspileAttribute", StringComparison.Ordinal);
+        var looksLikeTranspile =
+            n == "Transpile" || n == "TranspileAttribute" ||
+            n.EndsWith(".Transpile", StringComparison.Ordinal) ||
+            n.EndsWith(".TranspileAttribute", StringComparison.Ordinal);
+        if (!looksLikeTranspile || model is null) return looksLikeTranspile;
+
+        var resolved = model.GetSymbolInfo(attr).Symbol?.ContainingType
+            ?? model.GetTypeInfo(attr).Type as INamedTypeSymbol;
+        // An unresolvable name comes back as an error symbol rather than null.
+        if (resolved is null || resolved.TypeKind == TypeKind.Error)
+        {
+            // Something spelled like [Transpile] that does not name a type.
+            // Silently skipping it would emit an empty (or half-empty) file
+            // and leave the author hunting for why; say so instead.
+            throw new NotSupportedException(
+                $"`[{n}]` does not resolve to a type. Mirrorgen's attribute lives in the "
+                + "`Mirrorgen` namespace: write `[Transpile]` with `using Mirrorgen;`, or "
+                + "`[Mirrorgen.Transpile]`. (`Mirrorgen.Attributes` is the assembly name, "
+                + "not a namespace.)");
+        }
+        return resolved.ToDisplayString() == "Mirrorgen.TranspileAttribute";
     }
 
     static bool HasNoTranspileAttribute(SyntaxList<AttributeListSyntax> attributeLists)

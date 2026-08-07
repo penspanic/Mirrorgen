@@ -10,7 +10,7 @@ public class BigIntTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static long Identity(long x) => x;
             }
             """);
@@ -22,7 +22,7 @@ public class BigIntTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static long Five() => 5L;
             }
             """);
@@ -34,7 +34,7 @@ public class BigIntTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static long Sum(long a, long b) => a + b;
             }
             """);
@@ -46,7 +46,7 @@ public class BigIntTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static long Mul(long a, long b) => a * b;
             }
             """);
@@ -58,7 +58,7 @@ public class BigIntTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static ulong Sum(ulong a, ulong b) => a + b;
             }
             """);
@@ -69,7 +69,7 @@ public class BigIntTests
     public void Long_Property_On_Record_Emits_Bigint()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Timestamp(long Ticks);
             """);
         Assert.Contains("  Ticks: bigint;", ts);
@@ -80,7 +80,7 @@ public class BigIntTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static long Total(long n) {
                     long total = 0L;
                     total += n;

@@ -10,7 +10,7 @@ public class NarrowingCastTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class K {
-                [Mirrorgen.Attributes.Transpile] public static byte F(int x) => (byte)x;
+                [Mirrorgen.Transpile] public static byte F(int x) => (byte)x;
             }
             """);
         Assert.Contains("((x) & 0xff)", ts);
@@ -21,7 +21,7 @@ public class NarrowingCastTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class K {
-                [Mirrorgen.Attributes.Transpile] public static sbyte F(int x) => (sbyte)x;
+                [Mirrorgen.Transpile] public static sbyte F(int x) => (sbyte)x;
             }
             """);
         Assert.Contains("(((x) << 24) >> 24)", ts);
@@ -32,7 +32,7 @@ public class NarrowingCastTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class K {
-                [Mirrorgen.Attributes.Transpile] public static short F(int x) => (short)x;
+                [Mirrorgen.Transpile] public static short F(int x) => (short)x;
             }
             """);
         Assert.Contains("(((x) << 16) >> 16)", ts);
@@ -43,7 +43,7 @@ public class NarrowingCastTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class K {
-                [Mirrorgen.Attributes.Transpile] public static ushort F(int x) => (ushort)x;
+                [Mirrorgen.Transpile] public static ushort F(int x) => (ushort)x;
             }
             """);
         Assert.Contains("((x) & 0xffff)", ts);
@@ -55,10 +55,10 @@ public class NarrowingCastTests
         // (byte)(FirstSandTileId + groupId) — the inner expression must keep
         // emitting whatever it does normally, with the cast wrapping it.
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class K {
                 public const byte FirstSandTileId = 2;
-                [Mirrorgen.Attributes.Transpile] public static byte SandTileId(byte groupId) => (byte)(FirstSandTileId + groupId);
+                [Mirrorgen.Transpile] public static byte SandTileId(byte groupId) => (byte)(FirstSandTileId + groupId);
             }
             """);
         Assert.Contains("export const FirstSandTileId: number = 2;", ts);
@@ -71,7 +71,7 @@ public class NarrowingCastTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class K {
-                [Mirrorgen.Attributes.Transpile] public static byte F(long x) => (byte)x;
+                [Mirrorgen.Transpile] public static byte F(long x) => (byte)x;
             }
             """);
         Assert.Contains("Number(x & 0xffn)", ts);
@@ -82,7 +82,7 @@ public class NarrowingCastTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class K {
-                [Mirrorgen.Attributes.Transpile] public static ushort F(ulong x) => (ushort)x;
+                [Mirrorgen.Transpile] public static ushort F(ulong x) => (ushort)x;
             }
             """);
         Assert.Contains("Number(x & 0xffffn)", ts);

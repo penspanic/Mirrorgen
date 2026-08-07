@@ -9,7 +9,7 @@ public class ClassLevelTranspileTests
     public void Class_Level_Transpile_Emits_All_Public_Static_Methods()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class K {
                 public const byte First = 2;
                 public static byte Plus(byte a, byte b) => (byte)(a + b);
@@ -25,7 +25,7 @@ public class ClassLevelTranspileTests
     public void Class_Level_Transpile_Skips_Non_Public_Static_Methods()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class K {
                 public static int Pub(int x) => x;
                 internal static int Internal(int x) => x;
@@ -42,7 +42,7 @@ public class ClassLevelTranspileTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class K {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int F(int x) => x + 1;
                 public static int G(int x) => x * 2;
             }
@@ -56,9 +56,9 @@ public class ClassLevelTranspileTests
     {
         // class-level + per-method [Transpile] should emit each method exactly once.
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class K {
-                [Mirrorgen.Attributes.Transpile] public static int F(int x) => x + 1;
+                [Mirrorgen.Transpile] public static int F(int x) => x + 1;
             }
             """);
         var firstIndex = ts.IndexOf("export function F(");

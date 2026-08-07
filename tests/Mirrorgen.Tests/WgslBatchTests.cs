@@ -44,14 +44,14 @@ public class WgslBatchTests : IDisposable
         // throw.
         var export = Write("Export.cs", """
             namespace N;
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class Export {
                 public static byte Sand(byte g) => (byte)(2 + g);
             }
             """);
         var model = Write("Model.cs", """
             namespace N;
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class Model {
                 public static int Pick(int tile) {
                     if (tile == Enc.BedrockTileId) { return 7; }
@@ -74,14 +74,14 @@ public class WgslBatchTests : IDisposable
     {
         var a = Write("A.cs", """
             namespace N;
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class A {
                 public static (byte R, byte G, byte B) Black() { return (0, 0, 0); }
             }
             """);
         var b = Write("B.cs", """
             namespace N;
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class B {
                 public static (byte R, byte G, byte B) White() { return (255, 255, 255); }
             }
@@ -110,7 +110,7 @@ public class WgslBatchTests : IDisposable
     {
         var src = Write("Field.cs", """
             namespace N.Deep;
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class Field {
                 public static int Twice(int x) { return x * 2; }
             }
@@ -127,7 +127,7 @@ public class WgslBatchTests : IDisposable
     {
         var src = Write("Field.cs", """
             namespace N.Deep;
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class Field {
                 public static int Twice(int x) { return x * 2; }
             }
@@ -144,7 +144,7 @@ public class WgslBatchTests : IDisposable
     {
         var src = Write("Field.cs", """
             namespace N.Deep;
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class Field {
                 public static int Twice(int x) { return x * 2; }
             }
@@ -163,7 +163,7 @@ public class WgslBatchTests : IDisposable
     {
         var src = Write("Field.cs", """
             namespace N.Deep;
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class Field {
                 public static int Twice(int x) { return x * 2; }
             }
@@ -188,7 +188,7 @@ public class WgslBatchTests : IDisposable
     {
         var src = Write("F.cs", """
             namespace N;
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class F {
                 private const int Bits = 8;
                 private const int Mask = (1 << Bits) - 1;
@@ -214,7 +214,7 @@ public class WgslBatchTests : IDisposable
     {
         var src = Write("Inst.cs", """
             namespace N;
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public sealed record Inst(int Seed) {
                 public int Twice(int x) { return x * Seed; }
             }

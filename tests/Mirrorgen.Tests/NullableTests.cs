@@ -9,7 +9,7 @@ public class NullableTests
     public void Nullable_Int_Property_Emits_Number_Or_Null()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public class Reading
             {
                 public int? Value { get; set; }
@@ -23,7 +23,7 @@ public class NullableTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             #nullable enable
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public class Profile
             {
                 public string? Nickname { get; set; }
@@ -36,7 +36,7 @@ public class NullableTests
     public void Nullable_Int_In_Positional_Record()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Sample(int Id, int? OptionalScore);
             """);
         Assert.Contains("  Id: number;", ts);
@@ -49,7 +49,7 @@ public class NullableTests
         var ts = TranspilerEngine.TranspileSource("""
             public static class S
             {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static bool HasValue(int? v) => v != null;
             }
             """);

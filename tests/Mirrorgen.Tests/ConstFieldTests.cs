@@ -9,7 +9,7 @@ public class ConstFieldTests
     public void Public_Const_Byte_Emits_Export_Const_With_Value()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class Encoding {
                 public const byte AirTileId = 0;
             }
@@ -22,7 +22,7 @@ public class ConstFieldTests
     public void Const_Only_Class_Skips_Empty_Interface_Block()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class Encoding {
                 public const byte AirTileId = 0;
                 public const byte BedrockTileId = 1;
@@ -37,7 +37,7 @@ public class ConstFieldTests
     public void Constants_For_All_Primitive_Types()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class K {
                 public const sbyte A = -1;
                 public const short B = -100;
@@ -65,7 +65,7 @@ public class ConstFieldTests
     public void Long_And_Ulong_Const_Emit_As_BigInt_Literal()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class L {
                 public const long A = 9000000000L;
                 public const ulong B = 18000000000UL;
@@ -79,7 +79,7 @@ public class ConstFieldTests
     public void Constant_Expression_Initializer_Is_Evaluated()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class K {
                 public const int Scale = 1 << 8;
                 public const int HalfScale = Scale / 2;
@@ -100,7 +100,7 @@ public class ConstFieldTests
         // consumers can't reach them — that preserves the C# private /
         // internal visibility intent at the module boundary.
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class K {
                 public const int Public = 1;
                 internal const int Internal = 2;
@@ -118,7 +118,7 @@ public class ConstFieldTests
     public void String_Const_Escapes_Special_Characters()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class K {
                 public const string A = "line1\nline2";
                 public const string B = "with \"quotes\"";
@@ -134,7 +134,7 @@ public class ConstFieldTests
     public void Existing_Interface_Emit_Still_Works_When_Mixed_With_Const()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public class Mixed {
                 public const int Version = 1;
                 public int Value { get; init; }

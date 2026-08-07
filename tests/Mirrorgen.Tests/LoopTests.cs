@@ -8,7 +8,7 @@ public class LoopTests
     static string Transpile(string body, string returnType = "int", string paramList = "int n") =>
         TranspilerEngine.TranspileSource($$"""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static {{returnType}} F({{paramList}}) {
                     {{body}}
                 }
@@ -56,7 +56,7 @@ public class LoopTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int Sum(int[] arr) {
                     int total = 0;
                     foreach (var x in arr) total += x;
@@ -75,7 +75,7 @@ public class LoopTests
             using System.Collections.Generic;
 
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int Count(HashSet<int> set) {
                     int n = 0;
                     foreach (var x in set) n++;

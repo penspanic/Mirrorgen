@@ -10,7 +10,7 @@ public class SwitchTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static string F(int x) {
                     switch (x) {
                         case 1: return "a";
@@ -32,11 +32,11 @@ public class SwitchTests
     public void Switch_Statement_With_Enum_Case_Pattern()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public enum Color { Red, Green, Blue }
 
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int F(Color c) {
                     switch (c) {
                         case Color.Red: return 1;
@@ -57,7 +57,7 @@ public class SwitchTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int F(int x) {
                     int r = 0;
                     switch (x) {
@@ -79,7 +79,7 @@ public class SwitchTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static string F(int x) {
                     return x switch {
                         1 => "a",
@@ -100,11 +100,11 @@ public class SwitchTests
     public void Switch_Expression_Over_Enum_Member()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public enum Tier { Bronze, Silver, Gold }
 
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int F(Tier t) {
                     return t switch {
                         Tier.Bronze => 100,
@@ -127,7 +127,7 @@ public class SwitchTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int F(int x) {
                     return x switch {
                         1 => 10,
@@ -144,7 +144,7 @@ public class SwitchTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int F(int x) {
                     return x switch {
                         int n when n > 0 => n * 2,
@@ -162,7 +162,7 @@ public class SwitchTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int F(int x) {
                     return x switch {
                         var n => n,
@@ -179,7 +179,7 @@ public class SwitchTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static string F(int x) {
                     return x switch {
                         > 0 => "pos",
@@ -199,7 +199,7 @@ public class SwitchTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static string F(int x) {
                     return x switch {
                         > 0 and < 10 => "single",
@@ -216,7 +216,7 @@ public class SwitchTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static string F(int x) {
                     return x switch {
                         1 or 2 => "low",
@@ -233,7 +233,7 @@ public class SwitchTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int F(int x) {
                     switch (x) {
                         case > 0: return 1;
@@ -254,7 +254,7 @@ public class SwitchTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int F(int x) {
                     switch (x) {
                         case 1: return 10;
@@ -275,7 +275,7 @@ public class SwitchTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int F(int x, int limit) {
                     return x switch {
                         > 0 when x < limit => 1,

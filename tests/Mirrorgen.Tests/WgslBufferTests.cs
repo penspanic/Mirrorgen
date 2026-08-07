@@ -12,7 +12,7 @@ public class WgslBufferTests
     // path: Smoothstep + MixRgb (W2) called from SampleBedrock (W3).
     const string Source = """
         public static class S {
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static double Smoothstep(double edge0, double edge1, double x) {
                 if (edge1 <= edge0) { return x >= edge1 ? 1d : 0d; }
                 double t = (x - edge0) / (edge1 - edge0);
@@ -21,7 +21,7 @@ public class WgslBufferTests
                 return t * t * (3d - 2d * t);
             }
 
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static (byte R, byte G, byte B) MixRgb(
                 (byte R, byte G, byte B) a, (byte R, byte G, byte B) b, double t) {
                 if (t <= 0d) return a;
@@ -32,7 +32,7 @@ public class WgslBufferTests
                 return (r, g, bl);
             }
 
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static (byte R, byte G, byte B) SampleBedrock(
                 byte heightByte,
                 double absLat,

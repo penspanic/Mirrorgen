@@ -28,7 +28,7 @@ public class WgslNagaValidationTests
     {
         AssertValid("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static double Smoothstep(double edge0, double edge1, double x) {
                     if (edge1 <= edge0) { return x >= edge1 ? 1d : 0d; }
                     double t = (x - edge0) / (edge1 - edge0);
@@ -45,7 +45,7 @@ public class WgslNagaValidationTests
     {
         AssertValid("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static (byte R, byte G, byte B) MixRgb(
                     (byte R, byte G, byte B) a, (byte R, byte G, byte B) b, double t) {
                     if (t <= 0d) return a;
@@ -75,7 +75,7 @@ public class WgslNagaValidationTests
             }
 
             public static class TidemarkSurfaceColorModel {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static (byte R, byte G, byte B) ResolveSurfaceColor(
                     int tile,
                     int ownerByte,
@@ -103,7 +103,7 @@ public class WgslNagaValidationTests
                     return baseColor;
                 }
 
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static (byte R, byte G, byte B) SampleBedrock(
                     byte heightByte,
                     double absLat,
@@ -124,7 +124,7 @@ public class WgslNagaValidationTests
                     return MixRgb(c, polarColor, polarT);
                 }
 
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static double Smoothstep(double edge0, double edge1, double x) {
                     if (edge1 <= edge0) { return x >= edge1 ? 1d : 0d; }
                     double t = (x - edge0) / (edge1 - edge0);
@@ -133,7 +133,7 @@ public class WgslNagaValidationTests
                     return t * t * (3d - 2d * t);
                 }
 
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static (byte R, byte G, byte B) MixRgb(
                     (byte R, byte G, byte B) a, (byte R, byte G, byte B) b, double t) {
                     if (t <= 0d) return a;
@@ -152,7 +152,7 @@ public class WgslNagaValidationTests
     {
         AssertValid("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static double Smoothstep(double edge0, double edge1, double x) {
                     if (edge1 <= edge0) { return x >= edge1 ? 1d : 0d; }
                     double t = (x - edge0) / (edge1 - edge0);
@@ -161,7 +161,7 @@ public class WgslNagaValidationTests
                     return t * t * (3d - 2d * t);
                 }
 
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static (byte R, byte G, byte B) MixRgb(
                     (byte R, byte G, byte B) a, (byte R, byte G, byte B) b, double t) {
                     if (t <= 0d) return a;
@@ -172,7 +172,7 @@ public class WgslNagaValidationTests
                     return (r, g, bl);
                 }
 
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static (byte R, byte G, byte B) SampleBedrock(
                     byte heightByte,
                     double absLat,

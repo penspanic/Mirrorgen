@@ -11,7 +11,7 @@ public class CollectionTests
         var ts = TranspilerEngine.TranspileSource("""
             using System.Collections.Generic;
 
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public class Cart
             {
                 public List<int> LineIds { get; set; } = new();
@@ -26,7 +26,7 @@ public class CollectionTests
         var ts = TranspilerEngine.TranspileSource("""
             using System.Collections.Generic;
 
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Order(IReadOnlyList<string> Skus);
             """);
         Assert.Contains("  Skus: string[];", ts);
@@ -40,7 +40,7 @@ public class CollectionTests
 
             public static class S
             {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int First(List<int> xs) => xs[0];
             }
             """);
@@ -55,7 +55,7 @@ public class CollectionTests
 
             public static class S
             {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int Sum(List<int> xs)
                 {
                     int total = 0;
@@ -74,7 +74,7 @@ public class CollectionTests
         var ts = TranspilerEngine.TranspileSource("""
             using System.Collections.Generic;
 
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Inventory(Dictionary<string, int> Counts);
             """);
         Assert.Contains("  Counts: Record<string, number>;", ts);
@@ -88,7 +88,7 @@ public class CollectionTests
 
             public static class S
             {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static string Lookup(IReadOnlyDictionary<int, string> map, int key) => map[key];
             }
             """);
@@ -101,7 +101,7 @@ public class CollectionTests
         var ts = TranspilerEngine.TranspileSource("""
             using System.Collections.Generic;
 
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Bag(HashSet<int> Items);
             """);
         Assert.Contains("Items: Set<number>;", ts);
@@ -115,7 +115,7 @@ public class CollectionTests
             TranspilerEngine.TranspileSource("""
                 using System.Collections.Generic;
 
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public record Bad(LinkedList<int> Items);
                 """));
     }

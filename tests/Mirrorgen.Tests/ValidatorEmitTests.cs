@@ -11,7 +11,7 @@ public class ValidatorEmitTests
     public void Default_Options_Do_Not_Emit_Validators()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Foo(int X);
             """);
         Assert.DoesNotContain("parseFoo", ts);
@@ -22,7 +22,7 @@ public class ValidatorEmitTests
     {
         var ts = TranspilerEngine.TranspileSource(
             """
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Foo(int X, string Name);
             """,
             WithValidators);
@@ -37,7 +37,7 @@ public class ValidatorEmitTests
     {
         var ts = TranspilerEngine.TranspileSource(
             """
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Foo(int? Maybe);
             """,
             WithValidators);
@@ -52,7 +52,7 @@ public class ValidatorEmitTests
         // "always present, value may be null" — the parse step bridges the two.
         var ts = TranspilerEngine.TranspileSource(
             """
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Foo(int? Maybe);
             """,
             WithValidators);
@@ -65,7 +65,7 @@ public class ValidatorEmitTests
     {
         var ts = TranspilerEngine.TranspileSource(
             """
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Foo(int Required);
             """,
             WithValidators);
@@ -77,7 +77,7 @@ public class ValidatorEmitTests
     {
         var ts = TranspilerEngine.TranspileSource(
             """
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public class Foo {
                 public System.Collections.Generic.List<int> Items { get; init; }
             }
@@ -91,7 +91,7 @@ public class ValidatorEmitTests
     {
         var ts = TranspilerEngine.TranspileSource(
             """
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public class Foo {
                 public System.Collections.Generic.Dictionary<string, int> Map { get; init; }
             }
@@ -106,9 +106,9 @@ public class ValidatorEmitTests
     {
         var ts = TranspilerEngine.TranspileSource(
             """
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Inner(int N);
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Outer(Inner Child);
             """,
             WithValidators);
@@ -126,9 +126,9 @@ public class ValidatorEmitTests
     {
         var ts = TranspilerEngine.TranspileSource(
             """
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public enum Kind { A, B }
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Foo(Kind Tag);
             """,
             WithValidators);
