@@ -95,7 +95,7 @@ Core 라이브러리만이 실제 일을 합니다. 나머지 프로젝트는 �
 
 부분집합은 두 갈래: **type surface** (DTO 모양 — enum, record, primitive, `T[]`, `Dictionary<K,V>` 등) 와 **expression / statement surface** (local, wrap 보존 정수 산술, control flow, `[Transpile]` 메서드 간 호출).
 
-v0.1 범위 밖: LINQ, async / await / Task, `Span<T>` / ref / unsafe / pointer, `throw`, reflection, inheritance, 생성 이후 mutable collection mutation, generic method, enum constant 이상의 pattern matching.
+범위 밖: LINQ, async / await / Task, `Span<T>` 를 비롯한 ref-like type, `ref` 반환, unsafe / pointer, 도달 가능한 제어 흐름으로서의 `throw`, reflection, inheritance, enum constant 이상의 pattern matching. 정본은 [`SUBSET_ko.md`](SUBSET_ko.md) 이고, v0.1 이후로 넓어졌다 — `ref` / `out` 파라미터, generic method, 로컬 `List<T>` 쌓기는 이제 전부 들어온다.
 
 왜 좁게? Emit 결과가 C# semantic 을 bit 단위로 거울처럼 반사해야 — overflow / 지연 enumeration / 할당 동작 / 예외 의미 등 cross-language edge case 가 새 construct 마다 폭증합니다. Mirrorgen 은 `Mirrorgen.Analyzers` 가 subset 위반을 빌드 시점에 차단하게 (안정된 id `MG0001`–`MG0099`) 두어 — C# 원본에서 silently 벗어나는 TS 가 생성되지 않게 합니다.
 
@@ -194,7 +194,7 @@ Mirrorgen v0.1 은 typical type-only generator 모양의 drop-in superset 으로
 - **Type pattern + `var` capture** in switch (`int n when n > 0 => ...`)
 - **`switch` statement** 의 relational / and / or pattern (expression 형은 v0.1 에서 이미 지원)
 - **`Dictionary<K,V>` fixture sampling** — `[GenerateCrossTest]` 에서 아직 throw 하는 마지막 argument shape
-- **Sample 빌드에 `Mirrorgen.Analyzers` 연결** — SDK 가 Roslyn 5.x analyzer 호환 csc 를 ship 한 후
+- **Sample 빌드에 `Mirrorgen.Analyzers` 연결** — SDK 를 기다리는 대신 지원하는 가장 낮은 Roslyn 을 타겟해서 해결. csc 가 로드하지 못하는 analyzer 는 경고로만 실패하고 아무것도 강제하지 않게 된다
 - **Math.Round / Math.Truncate** — 명시적 `Math.fround` 형 helper (C#/JS divergence 가 너무 커서 직접 whitelist 불가)
 - **첫 실세계 채택자** — production validation / pricing / permission 로직
 

@@ -42,12 +42,15 @@ public sealed class SubsetAnalyzer : DiagnosticAnalyzer
 
     internal static readonly DiagnosticDescriptor MG0003 = new(
         id: MG0003Id,
-        title: "Span / ref / in / out / unsafe are not allowed in [Transpile] methods",
+        title: "Span / ref-like types / ref returns / unsafe are not allowed in [Transpile] methods",
         messageFormat: "Method '{0}' uses '{1}'. Pointer / ref-like / unsafe constructs have no TS mirror — move it out of the transpile boundary.",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Mirrorgen's transpiled subset deliberately excludes Span<T> / ref / in / out / unsafe / pointers. " + ConceptRef);
+        description: "Mirrorgen's transpiled subset excludes constructs that alias stack memory: Span<T>, "
+            + "other ref struct types, ref returns, unsafe and pointers. `ref` / `out` / `in` *parameters* "
+            + "are allowed — they are local, they emit as tuple destructuring, and values stay values. "
+            + ConceptRef);
 
     internal static readonly DiagnosticDescriptor MG0004 = new(
         id: MG0004Id,
@@ -56,7 +59,12 @@ public sealed class SubsetAnalyzer : DiagnosticAnalyzer
         category: Category,
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
-        description: "Mirrorgen's transpiled subset deliberately excludes exceptions. " + ConceptRef);
+        description: "Mirrorgen's transpiled subset deliberately excludes exceptions: the exception type "
+            + "mapping onto JS is lossy, and a throwing path cannot be cross-validated at all because "
+            + "fixture capture invokes the method and records its return value. The one exception is the "
+            + "discard arm of a switch expression, where a throw asserts totality rather than describing "
+            + "behaviour — it is unreachable, so there is nothing for a fixture to disagree about. "
+            + ConceptRef);
 
     internal static readonly DiagnosticDescriptor MG0005 = new(
         id: MG0005Id,
@@ -115,20 +123,19 @@ public sealed class SubsetAnalyzer : DiagnosticAnalyzer
                 });
             }
 
-            // MG0003: Span<T> / ReadOnlySpan<T> parameter or return type.
-            if (IsSpanLike(method.ReturnType))
+            // MG0003: ref-like (Span<T> and friends) parameter or return type.
+            if (IsRefLike(method.ReturnType))
             {
                 ReportOnce(symbolStart, MG0003, method.Locations.FirstOrDefault(),
                     method.Name, method.ReturnType.ToDisplayString());
             }
+            // `ref` / `out` / `in` *parameters* are deliberately not reported.
+            // They are local, they emit as tuple destructuring, and values stay
+            // values across the boundary — nothing about them fails to mirror.
+            // What stays out is anything that aliases stack memory.
             foreach (var p in method.Parameters)
             {
-                if (p.RefKind != RefKind.None)
-                {
-                    ReportOnce(symbolStart, MG0003, p.Locations.FirstOrDefault(),
-                        method.Name, $"{p.RefKind.ToString().ToLowerInvariant()} parameter '{p.Name}'");
-                }
-                if (IsSpanLike(p.Type) || p.Type is IPointerTypeSymbol)
+                if (IsRefLike(p.Type) || p.Type is IPointerTypeSymbol)
                 {
                     ReportOnce(symbolStart, MG0003, p.Locations.FirstOrDefault(),
                         method.Name, p.Type.ToDisplayString());
@@ -138,6 +145,14 @@ public sealed class SubsetAnalyzer : DiagnosticAnalyzer
             {
                 ReportOnce(symbolStart, MG0003, method.Locations.FirstOrDefault(),
                     method.Name, method.ReturnType.ToDisplayString());
+            }
+            // A `ref` return is a genuine alias into the caller's storage, with
+            // no JS equivalent. Unlike a ref parameter it cannot be modelled as
+            // an extra return value.
+            if (method.RefKind != RefKind.None)
+            {
+                ReportOnce(symbolStart, MG0003, method.Locations.FirstOrDefault(),
+                    method.Name, $"{method.RefKind.ToString().ToLowerInvariant()} return");
             }
 
             // MG0003: unsafe modifier on the method itself.
@@ -188,8 +203,11 @@ public sealed class SubsetAnalyzer : DiagnosticAnalyzer
                             MG0002, awaitOp.Syntax.GetLocation(), method.Name, "await"));
                         break;
                     case IThrowOperation throwOp:
-                        opContext.ReportDiagnostic(Diagnostic.Create(
-                            MG0004, throwOp.Syntax.GetLocation(), method.Name));
+                        if (!IsTotalityGuard(throwOp.Syntax))
+                        {
+                            opContext.ReportDiagnostic(Diagnostic.Create(
+                                MG0004, throwOp.Syntax.GetLocation(), method.Name));
+                        }
                         break;
                 }
             }, OperationKind.Invocation, OperationKind.Await, OperationKind.Throw);
@@ -245,8 +263,34 @@ public sealed class SubsetAnalyzer : DiagnosticAnalyzer
                name == "System.Threading.Tasks.ValueTask<TResult>";
     }
 
-    static bool IsSpanLike(ITypeSymbol type)
+    /// <summary>
+    /// True for a throw that sits in the discard arm of a switch expression —
+    /// `_ =&gt; throw new ArgumentOutOfRangeException(...)`. That is the
+    /// idiomatic C# way to assert a switch is total, not a description of
+    /// runtime behaviour: reaching it is already a bug, so there is nothing for
+    /// a cross-test fixture to disagree about. Mirrorgen itself emits a throw
+    /// in exactly this position as its no-arm-matched safety net, so forbidding
+    /// the hand-written form would be incoherent.
+    /// </summary>
+    static bool IsTotalityGuard(SyntaxNode throwSyntax)
     {
+        // The operation's syntax is the `throw new T(...)` expression; its
+        // parent is the arm.
+        var node = throwSyntax;
+        if (node is ThrowStatementSyntax) return false;
+        return node.Parent is SwitchExpressionArmSyntax arm
+            && arm.Pattern is DiscardPatternSyntax;
+    }
+
+    /// <summary>
+    /// Types that alias stack memory and so have no TS mirror. Covers
+    /// Span&lt;T&gt; / ReadOnlySpan&lt;T&gt; by name for the case where the
+    /// compilation lacks the ref-struct metadata, plus any user-declared
+    /// `ref struct`.
+    /// </summary>
+    static bool IsRefLike(ITypeSymbol type)
+    {
+        if (type.IsRefLikeType) return true;
         var name = type.OriginalDefinition.ToDisplayString();
         return name == "System.Span<T>" || name == "System.ReadOnlySpan<T>";
     }

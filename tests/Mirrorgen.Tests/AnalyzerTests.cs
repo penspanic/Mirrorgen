@@ -156,13 +156,56 @@ public class AnalyzerTests
     }
 
     [Fact]
-    public async Task MG0003_Flags_Ref_Parameter()
+    public async Task MG0003_Allows_Ref_And_Out_Parameters()
     {
+        // `ref` / `out` / `in` parameters are local, emit as tuple
+        // destructuring, and keep values as values across the boundary —
+        // nothing about them fails to mirror. The walker has supported them
+        // for a while (see RefParamTests); the analyzer used to disagree.
         var source = """
             public static class S
             {
                 [Mirrorgen.Transpile]
-                public static void F(ref int x) { }
+                public static void F(ref int x) { x = x + 1; }
+
+                [Mirrorgen.Transpile]
+                public static void G(int seed, out int a, out int b) { a = seed; b = seed + 1; }
+
+                [Mirrorgen.Transpile]
+                public static int H(in int x) => x;
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.DoesNotContain(diags, d => d.Id == SubsetAnalyzer.MG0003Id);
+    }
+
+    [Fact]
+    public async Task MG0003_Flags_Ref_Return()
+    {
+        // Unlike a ref parameter, a ref *return* is a genuine alias into the
+        // caller's storage — it cannot be modelled as an extra return value.
+        var source = """
+            public static class S
+            {
+                static int _v;
+                [Mirrorgen.Transpile]
+                public static ref int F() => ref _v;
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.Contains(diags, d => d.Id == SubsetAnalyzer.MG0003Id);
+    }
+
+    [Fact]
+    public async Task MG0003_Flags_Ref_Struct_Parameter()
+    {
+        var source = """
+            public ref struct Window { public int Start; }
+
+            public static class S
+            {
+                [Mirrorgen.Transpile]
+                public static int F(Window w) => w.Start;
             }
             """;
         var diags = await GetAnalyzerDiagnostics(source);
@@ -274,6 +317,56 @@ public class AnalyzerTests
             """;
         var diags = await GetAnalyzerDiagnostics(source);
         Assert.DoesNotContain(diags, d => d.Id == SubsetAnalyzer.MG0006Id);
+    }
+
+    [Fact]
+    public async Task MG0004_Allows_Throw_In_A_Switch_Expression_Discard_Arm()
+    {
+        // A throw here asserts the switch is total rather than describing
+        // behaviour — reaching it is already a bug, so there is nothing for a
+        // fixture to disagree about. Mirrorgen emits a throw in exactly this
+        // position as its own no-arm-matched safety net.
+        var source = """
+            using System;
+
+            public enum K { A = 0, B = 1 }
+
+            public static class S
+            {
+                [Mirrorgen.Transpile]
+                public static int Map(K k) => k switch
+                {
+                    K.A => 1,
+                    K.B => 2,
+                    _ => throw new ArgumentOutOfRangeException(nameof(k)),
+                };
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.DoesNotContain(diags, d => d.Id == SubsetAnalyzer.MG0004Id);
+    }
+
+    [Fact]
+    public async Task MG0004_Still_Flags_Throw_In_A_Non_Discard_Arm()
+    {
+        // Same syntax, reachable position: this one is control flow.
+        var source = """
+            using System;
+
+            public enum K { A = 0, B = 1 }
+
+            public static class S
+            {
+                [Mirrorgen.Transpile]
+                public static int Map(K k) => k switch
+                {
+                    K.A => throw new ArgumentException("nope"),
+                    _ => 2,
+                };
+            }
+            """;
+        var diags = await GetAnalyzerDiagnostics(source);
+        Assert.Contains(diags, d => d.Id == SubsetAnalyzer.MG0004Id);
     }
 
     static async Task<ImmutableArray<Diagnostic>> GetAnalyzerDiagnostics(string source)
