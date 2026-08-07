@@ -140,11 +140,35 @@ public static class BatchTranspiler
                 if (exportMatch.Success)
                 {
                     var name = exportMatch.Groups[1].Value;
-                    if (!exports.ContainsKey(name))
+                    var body = block.TrimEnd('\n');
+                    if (exports.TryGetValue(name, out var existing))
                     {
-                        exports[name] = block.TrimEnd('\n');
-                        exportOrder.Add(name);
+                        // Two blocks can share a name for two very different
+                        // reasons. Types are deliberately inlined into every
+                        // tree that references them, so the *same* declaration
+                        // legitimately shows up N times — identical text is
+                        // that case, and dropping the extras is right.
+                        //
+                        // Different text means two *different* C# members
+                        // collided on one TS identifier (e.g. a `static
+                        // readonly T Instance` on each of two classes, both
+                        // hoisted to module scope). TypeScript has a single
+                        // module scope, so keeping the first silently deletes
+                        // the second — the consumer gets a module that is
+                        // quietly missing a declaration it asked for.
+                        if (!string.Equals(existing, body, System.StringComparison.Ordinal))
+                        {
+                            throw new NotSupportedException(
+                                $"Aggregated emit produced two different top-level declarations named '{name}'. "
+                                + "TypeScript has one module scope, so only one of them can survive. "
+                                + "Rename one of the C# members with [Transpile(EmitName = \"...\")].\n"
+                                + $"  first:  {FirstLine(existing)}\n"
+                                + $"  second: {FirstLine(body)}");
+                        }
+                        continue;
                     }
+                    exports[name] = body;
+                    exportOrder.Add(name);
                     continue;
                 }
 
@@ -190,6 +214,18 @@ public static class BatchTranspiler
             if (i + 1 < ordered.Count) sb.AppendLine();
         }
         return sb.ToString();
+    }
+
+    // First non-empty line of an emitted block — enough to identify which
+    // declaration is which in a collision message without dumping both bodies.
+    static string FirstLine(string block)
+    {
+        foreach (var line in block.Split('\n'))
+        {
+            var trimmed = line.Trim('\r', ' ');
+            if (trimmed.Length > 0) return trimmed;
+        }
+        return block.Trim();
     }
 
     static bool BlockStartsWith(string block, string prefix)

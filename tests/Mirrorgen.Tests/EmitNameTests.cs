@@ -94,4 +94,37 @@ public class EmitNameTests
         Assert.Contains("export function SampleUnique(", ts);
         Assert.Contains("SampleUnique(x)", ts);
     }
+
+    [Fact]
+    public void EmitName_On_A_Class_Static_Field_Renames_Declaration_And_Call_Sites()
+    {
+        // Static fields on a [Transpile] class get hoisted to module scope, so
+        // two classes each declaring `Instance` collide on one TS identifier.
+        // EmitName is the documented way out — which only works if both the
+        // hoisted declaration and every call site follow the rename.
+        var ts = TranspilerEngine.TranspileSource("""
+            using Mirrorgen;
+
+            namespace X;
+
+            [Transpile]
+            public sealed class Proj
+            {
+                [Transpile(EmitName = "ProjInstance")]
+                public static readonly Proj Instance = new();
+                public int Scale(int x) => x * 2;
+            }
+
+            public static class Caller
+            {
+                [Transpile]
+                public static int Use(int x) => Proj.Instance.Scale(x);
+            }
+            """);
+
+        Assert.Contains("export const ProjInstance: Proj = new Proj();", ts);
+        Assert.DoesNotContain("export const Instance:", ts);
+        // Call site resolves to the renamed const, not the C# member name.
+        Assert.Contains("ProjInstance.Scale(x)", ts);
+    }
 }

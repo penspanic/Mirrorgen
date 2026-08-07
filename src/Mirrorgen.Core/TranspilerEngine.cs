@@ -2085,7 +2085,9 @@ public static partial class TranspilerEngine
                         && memberOwner.TypeKind != TypeKind.Enum
                         && (memberSym.Kind == SymbolKind.Field || memberSym.Kind == SymbolKind.Property))
                     {
-                        return memberName;
+                        // …under its emit name, so a static renamed to dodge a
+                        // module-scope collision stays reachable from call sites.
+                        return ReadEmitNameFromSymbol(memberSym) ?? memberName;
                     }
                     return $"{EmitExpression(member.Expression, ctx)}.{memberName}";
                 }
@@ -3957,7 +3959,13 @@ public static partial class TranspilerEngine
                 var tsType = MapType(field.Declaration.Type, ctx);
                 var isPublic = field.Modifiers.Any(SyntaxKind.PublicKeyword);
                 var keyword = isPublic ? "export const " : "const ";
-                staticFold.Append(keyword).Append(v.Identifier.Text)
+                // Honour [Transpile(EmitName = "…")] here the same way the
+                // record/interface path does. These statics get hoisted to
+                // module scope, where two classes each declaring `Instance`
+                // collide on one identifier — EmitName is the documented way
+                // out of that, so it has to actually take effect.
+                var emitName = ReadEmitName(field.AttributeLists) ?? v.Identifier.Text;
+                staticFold.Append(keyword).Append(emitName)
                   .Append(": ").Append(tsType)
                   .Append(" = ").Append(initEmit).AppendLine(";");
                 // Separate consecutive const declarations with a blank line so
