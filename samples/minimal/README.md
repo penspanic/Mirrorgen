@@ -73,7 +73,3 @@ single `<PackageReference Include="Mirrorgen.MSBuild" PrivateAssets="all" />`.
   and DiscountKind enum are emitted as types but aren't fed into the
   fixture loop. The three primitive-arg methods (`ClampQuantity`, `Total`,
   `ApplyDiscount`) still get their full 16-sample cross-tests.
-- **Analyzer enforcement.** The Roslyn 5.3 analyzer can't be loaded by the
-  pinned .NET SDK's csc yet, so it isn't wired in here. It will be once
-  the SDK catches up — at which point a subset violation in `Pricing.cs`
-  becomes a build error rather than runtime nonsense.

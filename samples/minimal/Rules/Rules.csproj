@@ -37,11 +37,14 @@
     <Import Project="..\..\..\src\Mirrorgen.MSBuild\build\Mirrorgen.MSBuild.targets" />
 
     <!--
-      The Mirrorgen.Analyzers project would normally be wired in as
-      <OutputItemType="Analyzer" ReferenceOutputAssembly="false"/> so the
-      subset is enforced at compile time. It targets Roslyn 5.x, however,
-      and the currently pinned .NET SDK ships an older csc that refuses to
-      load it. The wiring will switch back on once the SDK catches up.
+      Subset enforcement at compile time. The analyzer targets the oldest
+      supported Roslyn precisely so csc can load it — see the version
+      override in Mirrorgen.Analyzers.csproj.
     -->
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\src\Mirrorgen.Analyzers\Mirrorgen.Analyzers.csproj"
+                          OutputItemType="Analyzer"
+                          ReferenceOutputAssembly="false" />
+    </ItemGroup>
 
 </Project>

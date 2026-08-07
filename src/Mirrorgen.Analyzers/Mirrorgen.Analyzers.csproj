@@ -25,8 +25,17 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
-        <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
+        <!--
+          Analyzers must target the *oldest* Roslyn they support, not the
+          newest: csc refuses to load an analyzer that references a compiler
+          version newer than its own (CS9057), and the failure is a warning, so
+          the analyzer silently stops running. The repo-wide pin is ahead of
+          every released SDK, hence the override here. Mirrorgen.Core is not
+          loaded by csc and keeps the central version.
+          4.14.0 covers .NET SDK 9 and later.
+        -->
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp" VersionOverride="4.14.0" PrivateAssets="all" />
+        <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" VersionOverride="4.14.0" PrivateAssets="all" />
     </ItemGroup>
 
     <ItemGroup>

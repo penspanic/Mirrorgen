@@ -95,7 +95,7 @@ The precise list of supported types, expressions, and the analyzer-id mapping th
 
 The subset is split in two: **type surface** (DTO shapes — enums, records, primitives, `T[]`, `Dictionary<K,V>`, etc.) and **expression / statement surface** (locals, integer arithmetic with wrap, control flow, calls between `[Transpile]` methods).
 
-Out of scope in v0.1: LINQ, async / await / Task, `Span<T>` / ref / unsafe / pointers, `throw`, reflection, inheritance, mutable collection mutation, generic methods, pattern matching beyond enum constants.
+Out of scope: LINQ, async / await / Task, `Span<T>` and other ref-like types, `ref` returns, unsafe / pointers, `throw` as reachable control flow, reflection, inheritance, pattern matching beyond enum constants. The authoritative list is [`SUBSET.md`](SUBSET.md), which has moved since v0.1 — `ref` / `out` parameters, generic methods, and building up a local `List<T>` are all in now.
 
 Why narrow? The output has to mirror C# semantics bit-for-bit, and every additional construct multiplies the cross-language edge cases (overflow, deferred enumeration, allocation behavior, exception semantics). Mirrorgen leans on `Mirrorgen.Analyzers` to fail subset violations at build time (stable ids `MG0001`–`MG0099`) rather than producing TS that quietly drifts from the C# source.
 
@@ -194,7 +194,7 @@ Wire-equivalence on a real adopter's existing output is the v0.1 "done" criterio
 - **Type patterns + `var` capture** in switch (`int n when n > 0 => ...`)
 - **`switch` statement** with relational / and / or patterns (expression form already supports them in v0.1)
 - **`Dictionary<K,V>` fixture sampling** — the last `[GenerateCrossTest]` argument shape that still throws
-- **`Mirrorgen.Analyzers` wired into sample builds** once the SDK ships a csc compatible with Roslyn 5.x analyzers
+- **`Mirrorgen.Analyzers` wired into sample builds** — done by targeting the oldest supported Roslyn rather than waiting for the SDK to catch up; an analyzer that csc refuses to load fails as a warning and silently stops enforcing anything
 - **Math.Round / Math.Truncate** with explicit `Math.fround`-style helpers (the C#/JS divergence too big to whitelist directly)
 - **First real-world adopter** carrying production validation / pricing / permission logic
 
