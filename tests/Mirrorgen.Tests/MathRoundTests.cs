@@ -11,7 +11,7 @@ public class MathRoundTests
         var ts = TranspilerEngine.TranspileSource("""
             using System;
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static double F(double x) => Math.Round(x);
             }
             """);
@@ -25,7 +25,7 @@ public class MathRoundTests
         var ts = TranspilerEngine.TranspileSource("""
             using System;
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static double F(double x) => Math.Round(x, MidpointRounding.AwayFromZero);
             }
             """);
@@ -40,7 +40,7 @@ public class MathRoundTests
         var ts = TranspilerEngine.TranspileSource("""
             using System;
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static double F(double x) => Math.Truncate(x);
             }
             """);
@@ -54,9 +54,9 @@ public class MathRoundTests
         var ts = TranspilerEngine.TranspileSource("""
             using System;
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static double F(double x) => Math.Round(x);
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static double G(double x) => Math.Round(x);
             }
             """);
@@ -73,7 +73,7 @@ public class MathRoundTests
             TranspilerEngine.TranspileSource("""
                 using System;
                 public static class S {
-                    [Mirrorgen.Attributes.Transpile]
+                    [Mirrorgen.Transpile]
                     public static double F(double x) => Math.Round(x, 2);
                 }
                 """));

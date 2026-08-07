@@ -11,7 +11,7 @@ public class EnumTests
         var ts = TranspilerEngine.TranspileSource("""
             public enum E { A, B, C }
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int Pick() { return 0; }
             }
             """);
@@ -23,7 +23,7 @@ public class EnumTests
     public void Enum_With_Transpile_Attribute_Emits_Members()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public enum Color { Red, Green, Blue }
             """);
         Assert.Contains("export enum Color {", ts);
@@ -37,7 +37,7 @@ public class EnumTests
     public void Enum_With_Explicit_Values_Are_Preserved()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public enum Status { Active = 10, Inactive = 20, Pending = 30 }
             """);
         Assert.Contains("Active = 10,", ts);
@@ -49,7 +49,7 @@ public class EnumTests
     public void Enum_With_Implicit_Increment_After_Explicit()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public enum Tier { Bronze = 5, Silver, Gold }
             """);
         Assert.Contains("Bronze = 5,", ts);
@@ -61,7 +61,7 @@ public class EnumTests
     public void Enum_With_Negative_Explicit_Value()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public enum Sign { Negative = -1, Zero = 0, Positive = 1 }
             """);
         Assert.Contains("Negative = -1,", ts);
@@ -73,7 +73,7 @@ public class EnumTests
     public void Enum_EmitName_Renames_Output()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile(EmitName = "OrderState")]
+            [Mirrorgen.Transpile(EmitName = "OrderState")]
             public enum CsOrderState { Open, Closed }
             """);
         Assert.Contains("export enum OrderState {", ts);

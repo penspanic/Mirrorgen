@@ -7,7 +7,7 @@
 
 using System;
 using System.Collections.Generic;
-using Mirrorgen.Attributes;
+using Mirrorgen;
 
 namespace Sample.Dtos;
 

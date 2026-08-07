@@ -9,7 +9,7 @@ public class DoubleSingleInvocationTests
         TranspilerEngine.TranspileSource($$"""
             using System;
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static {{returnType}} F({{paramList}}) {
                     {{body}}
                 }

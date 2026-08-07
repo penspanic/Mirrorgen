@@ -11,7 +11,7 @@ public class ListMutationTests
         var ts = TranspilerEngine.TranspileSource("""
             using System.Collections.Generic;
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int F() {
                     var xs = new List<int>();
                     return xs.Count;
@@ -28,7 +28,7 @@ public class ListMutationTests
         var ts = TranspilerEngine.TranspileSource("""
             using System.Collections.Generic;
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int F() {
                     var xs = new List<int>();
                     xs.Add(1);
@@ -48,7 +48,7 @@ public class ListMutationTests
         var ts = TranspilerEngine.TranspileSource("""
             using System.Collections.Generic;
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static bool F(List<int> xs, int n) => xs.Contains(n);
             }
             """);
@@ -60,7 +60,7 @@ public class ListMutationTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int F(int[] arr) => arr.Length;
             }
             """);
@@ -73,7 +73,7 @@ public class ListMutationTests
         var ts = TranspilerEngine.TranspileSource("""
             using System.Collections.Generic;
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int F(Dictionary<string, int> m) => m.Count;
             }
             """);
@@ -86,7 +86,7 @@ public class ListMutationTests
         Assert.Throws<System.NotSupportedException>(() =>
             TranspilerEngine.TranspileSource("""
                 public static class S {
-                    [Mirrorgen.Attributes.Transpile]
+                    [Mirrorgen.Transpile]
                     public static object F() => new object();
                 }
                 """));
@@ -99,7 +99,7 @@ public class ListMutationTests
         var ts = TranspilerEngine.TranspileSource("""
             using System.Collections.Generic;
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int[] F(int n) {
                     var xs = new List<int>();
                     for (int i = 0; i < n; i++) xs.Add(i);

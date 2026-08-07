@@ -23,7 +23,7 @@ public class PluginMappingTests
             using App;
             public static class S
             {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int Inc(OrderId id) => 0;
             }
             """, registry);
@@ -38,7 +38,7 @@ public class PluginMappingTests
 
         var ts = TranspilerEngine.TranspileSource("""
             using App;
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Cart(OrderId Id, int Total);
             """, registry);
         Assert.Contains("  Id: number;", ts);
@@ -56,10 +56,10 @@ public class PluginMappingTests
         var ts = TranspilerEngine.TranspileSource("""
             using App;
             namespace App {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public readonly record struct OrderId(int Value);
             }
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Cart(App.OrderId Id);
             """, registry);
         Assert.DoesNotContain("export interface OrderId", ts);
@@ -74,7 +74,7 @@ public class PluginMappingTests
 
         var ts = TranspilerEngine.TranspileSource("""
             using App;
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Line(Money Amount);
             """, registry);
         Assert.Contains("  Amount: Money;", ts);
@@ -95,11 +95,11 @@ public class PluginMappingTests
         // The mapping path must be a strict superset of the no-registry
         // path: same input → same output when nothing is registered.
         var ts1 = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Order(int Id);
             """);
         var ts2 = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Order(int Id);
             """, TypeMappingRegistry.Empty);
         Assert.Equal(ts1, ts2);

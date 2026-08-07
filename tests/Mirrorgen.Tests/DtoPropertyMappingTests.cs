@@ -9,7 +9,7 @@ public class DtoPropertyMappingTests
     public void Nullable_Int_Property_Emits_Optional_Marker_And_Null_Union()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public class Foo {
                 public int? Count { get; init; }
             }
@@ -21,7 +21,7 @@ public class DtoPropertyMappingTests
     public void Nullable_String_Property_Emits_Optional_Marker_And_Null_Union()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public class Foo {
                 public string? Name { get; init; }
             }
@@ -33,7 +33,7 @@ public class DtoPropertyMappingTests
     public void Nullable_Positional_Record_Param_Emits_Optional()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public record Foo(int? Maybe, string Required);
             """);
         Assert.Contains("Maybe: number | null;", ts);
@@ -44,7 +44,7 @@ public class DtoPropertyMappingTests
     public void List_And_IReadOnlyList_And_IEnumerable_All_Map_To_TS_Array()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public class Foo {
                 public System.Collections.Generic.List<int> A { get; init; }
                 public System.Collections.Generic.IReadOnlyList<int> B { get; init; }
@@ -66,7 +66,7 @@ public class DtoPropertyMappingTests
     public void Dictionary_Variants_Map_To_Record()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public class Foo {
                 public System.Collections.Generic.Dictionary<string, int> A { get; init; }
                 public System.Collections.Generic.IDictionary<string, int> B { get; init; }
@@ -82,7 +82,7 @@ public class DtoPropertyMappingTests
     public void Byte_Array_Maps_To_String_For_Base64_Wire()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public class Foo {
                 public byte[] Payload { get; init; }
             }

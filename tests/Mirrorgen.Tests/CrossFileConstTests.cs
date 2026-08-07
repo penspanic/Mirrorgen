@@ -82,7 +82,7 @@ public class CrossFileConstTests : IDisposable
         // continue to emit either the literal or the bare identifier (no broken
         // member access).
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public static class K {
                 public const int Base = 100;
                 public static int F(int x) => Base + x;

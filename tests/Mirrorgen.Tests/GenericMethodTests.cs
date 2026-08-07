@@ -10,7 +10,7 @@ public class GenericMethodTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static T Identity<T>(T x) => x;
             }
             """);
@@ -23,7 +23,7 @@ public class GenericMethodTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static T Pick<T, U>(T a, U b) => a;
             }
             """);
@@ -35,7 +35,7 @@ public class GenericMethodTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static T First<T>(T[] xs) => xs[0];
             }
             """);
@@ -51,7 +51,7 @@ public class GenericMethodTests
         Assert.Throws<System.NotSupportedException>(() =>
             TranspilerEngine.TranspileSource("""
                 public static class S {
-                    [Mirrorgen.Attributes.Transpile]
+                    [Mirrorgen.Transpile]
                     public static T Default<T>() where T : new() => new T();
                 }
                 """));

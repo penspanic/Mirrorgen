@@ -9,7 +9,7 @@ public class SpecialTypeMappingTests
     public void Guid_DateTime_TimeSpan_Map_To_String()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public class Foo {
                 public System.Guid Id { get; init; }
                 public System.DateTime Created { get; init; }
@@ -27,7 +27,7 @@ public class SpecialTypeMappingTests
     public void Object_And_JsonElement_Map_To_Unknown()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public class Foo {
                 public object Payload { get; init; }
                 public System.Text.Json.JsonElement Extra { get; init; }
@@ -41,7 +41,7 @@ public class SpecialTypeMappingTests
     public void Decimal_Maps_To_Number()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public class Foo {
                 public decimal Price { get; init; }
             }
@@ -53,7 +53,7 @@ public class SpecialTypeMappingTests
     public void Nullable_Guid_Emits_Optional_String_Or_Null()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            [Mirrorgen.Attributes.Transpile]
+            [Mirrorgen.Transpile]
             public class Foo {
                 public System.Guid? MaybeId { get; init; }
             }

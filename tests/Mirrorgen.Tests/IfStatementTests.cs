@@ -8,7 +8,7 @@ public class IfStatementTests
     static string Transpile(string body, string returnType = "int", string paramList = "int x") =>
         TranspilerEngine.TranspileSource($$"""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static {{returnType}} F({{paramList}}) {
                     {{body}}
                 }

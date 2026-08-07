@@ -11,7 +11,7 @@ public class TranspileTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int Answer() => 42;
             }
             """);
@@ -24,7 +24,7 @@ public class TranspileTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static bool Yes() => true;
             }
             """);
@@ -37,7 +37,7 @@ public class TranspileTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static string Greet() => "hello";
             }
             """);
@@ -50,7 +50,7 @@ public class TranspileTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static double Pi() => 3.14;
             }
             """);
@@ -63,7 +63,7 @@ public class TranspileTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int Identity(int x) => x;
             }
             """);
@@ -76,7 +76,7 @@ public class TranspileTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static int Five() { return 5; }
             }
             """);
@@ -96,10 +96,10 @@ public class TranspileTests
     }
 
     [Fact]
-    public void Short_Form_Attribute_Without_Namespace_Is_Recognized()
+    public void Short_Form_Attribute_With_Using_Is_Recognized()
     {
         var ts = TranspilerEngine.TranspileSource("""
-            using Mirrorgen.Attributes;
+            using Mirrorgen;
             public static class S {
                 [Transpile]
                 public static int A() => 1;
@@ -113,7 +113,7 @@ public class TranspileTests
     {
         var ts = TranspilerEngine.TranspileSource("""
             public static class S {
-                [Mirrorgen.Attributes.Transpile]
+                [Mirrorgen.Transpile]
                 public static void Noop() { return; }
             }
             """);
@@ -129,7 +129,7 @@ public class TranspileTests
         Assert.Throws<NotSupportedException>(() =>
             TranspilerEngine.TranspileSource("""
                 public static class S {
-                    [Mirrorgen.Attributes.Transpile]
+                    [Mirrorgen.Transpile]
                     public static char Initial() => 'A';
                 }
                 """));
