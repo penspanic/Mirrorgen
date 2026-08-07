@@ -23,6 +23,23 @@ To be filled in as the codebase grows. For now:
 - One project per concern (Core / Attributes / Analyzers / MSBuild / Cli) — do not collapse them
 - Public API surface changes go through `docs/CONCEPT.md` first
 
+## Releases
+
+Releases are cut from `main`, and only from `main`.
+
+- Version comes from the git tag via [MinVer](https://github.com/adamralph/minver);
+  the prefix is `v`, so `git tag v0.5.0` publishes `0.5.0`.
+- A tag whose name contains `-` (e.g. `v0.5.0-alpha.1`) is published as a
+  prerelease.
+- Pushing a `v*.*.*` tag triggers `.github/workflows/release.yml`, which packs
+  the whole solution and pushes to nuget.org.
+
+**A push to nuget.org cannot be undone** — nuget.org will not unlist a version
+on request. The workflow therefore refuses to publish a tag that is not an
+ancestor of `origin/main`. `0.3.0-alpha.39` was published from an off-branch
+commit before that guard existed and is stuck there permanently; the guard is
+what stops a repeat.
+
 ## Licensing
 
 By contributing, you agree that your contributions are licensed under the project's MIT license.
