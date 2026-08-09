@@ -15,10 +15,10 @@
 
       Generation reads C# *source*, so its output does not depend on the
       framework being compiled: every leg of a multi-targeted build produces
-      identical text. But MirrorgenOutput is one path while the incremental
-      stamp below lives under IntermediateOutputPath, which is per-TFM — so
-      each leg saw its own stamp as missing, ran, and wrote the same file as
-      the others. Inner builds run in parallel, so a three-TFM project raced
+      identical text. But MirrorgenOutput was one path while the incremental
+      stamp lived under IntermediateOutputPath, which is per-TFM — so each leg
+      saw its own stamp as missing, ran, and wrote the same file as the
+      others. Inner builds run in parallel, so a three-TFM project raced
       against itself on every build; the visible symptom was "the process
       cannot access the file ... because it is being used by another process"
       on whichever leg lost, reported as a generation error.
@@ -54,11 +54,50 @@
     </Target>
 
     <!--
-      IntermediateOutputPath is filled in by the SDK after this file is
-      imported, so stamp file paths are referenced inline in the target
-      attributes (which are evaluated lazily) rather than captured into a
-      property at import time.
+      Incrementality has to be about the generated files, not only about a
+      stamp.
+
+      The stamp is the build's claim that the output is current, and it lives
+      under IntermediateOutputPath while the output lives wherever
+      MirrorgenOutput points. Nothing tied them together, so the claim could
+      outlive the thing it claimed: clear or relocate MirrorgenOutput while
+      obj/ survives and the target is skipped as up to date, no file is
+      produced, and the build succeeds. Whatever imports the generated module
+      then fails somewhere unrelated — or reads a copy left over from before
+      and does not fail at all. Found by moving a consumer's MirrorgenOutput
+      and watching `dotnet build` report success with the directory empty.
+
+      Two things close it, and the stamp stays out of the output directory —
+      that directory belongs to the caller, and Mirrorgen's own samples commit
+      theirs.
+
+        - In aggregate mode the emitted file is known ahead of time, so it is
+          named as an output. MSBuild reruns the target when any listed output
+          is missing or older than the inputs, which is exactly the property
+          wanted.
+        - Either way, an output directory that no longer exists invalidates the
+          stamp before the up-to-date check reads it. That covers a cleaned or
+          moved output in file-per-tree mode too, where the emitted set is not
+          known until generation runs.
+
+      MirrorgenOutput is set in the project body, and IntermediateOutputPath is
+      filled in by the SDK after this file is imported, so both are referenced
+      inline in target attributes (evaluated lazily) rather than captured into
+      properties at import time.
     -->
+    <ItemGroup Condition="'$(MirrorgenOutput)' != '' and '$(MirrorgenAggregateOutputFile)' != ''">
+        <_MirrorgenDeclaredOutput Include="$(MirrorgenOutput)$(MirrorgenAggregateOutputFile)" />
+    </ItemGroup>
+    <ItemGroup Condition="'$(MirrorgenWgslOutput)' != ''">
+        <_MirrorgenDeclaredOutput Include="$(MirrorgenWgslOutput)" />
+    </ItemGroup>
+
+    <Target Name="MirrorgenInvalidateStampWithoutOutput"
+            BeforeTargets="MirrorgenGenerate"
+            Condition="'$(MirrorgenOutput)' != '' and '$(_MirrorgenGeneratingLeg)' == 'true' and !Exists('$(MirrorgenOutput)')">
+        <Delete Files="$(IntermediateOutputPath)mirrorgen.stamp;$(IntermediateOutputPath)mirrorgen.fixtures.stamp" />
+    </Target>
+
     <!--
       The plugin (if MirrorgenConfig is set) needs the just-built assembly,
       so MirrorgenGenerate runs after Build rather than after CoreCompile.
@@ -69,7 +108,7 @@
             AfterTargets="Build"
             Condition="'$(MirrorgenOutput)' != '' and '$(_MirrorgenGeneratingLeg)' == 'true'"
             Inputs="@(Compile);@(MirrorgenAdditionalSource);$(TargetPath)"
-            Outputs="$(IntermediateOutputPath)mirrorgen.stamp">
+            Outputs="$(IntermediateOutputPath)mirrorgen.stamp;@(_MirrorgenDeclaredOutput)">
         <MakeDir Directories="$(IntermediateOutputPath)" />
         <MirrorgenTask Sources="@(Compile)"
                        AdditionalSources="@(MirrorgenAdditionalSource)"
@@ -96,7 +135,7 @@
             AfterTargets="Build"
             Condition="'$(MirrorgenOutput)' != '' and '$(MirrorgenEmitFixtures)' == 'true' and '$(_MirrorgenGeneratingLeg)' == 'true'"
             Inputs="$(TargetPath)"
-            Outputs="$(IntermediateOutputPath)mirrorgen.fixtures.stamp">
+            Outputs="$(IntermediateOutputPath)mirrorgen.fixtures.stamp;$(MirrorgenFixturesOutput)">
         <MakeDir Directories="$(IntermediateOutputPath)" />
         <MirrorgenFixturesTask AssemblyPath="$(TargetPath)"
                                OutputPath="$(MirrorgenFixturesOutput)"
