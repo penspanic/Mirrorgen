@@ -26,6 +26,22 @@ jobs:
       - name: Restore
         run: dotnet restore Mirrorgen.sln
 
+      # Emptied before the build, so what the build produces is the whole
+      # answer. Leaving the committed files in place made the check blind to a
+      # tracked file that generation does not produce: it compares the tree
+      # after generation against the index, and a stale extra is identical in
+      # both. Two .mirrorgen.stamp files sat in samples/minimal that way, and
+      # this step passed on every one of them. Emptying first turns anything
+      # committed but not regenerated into a deletion, which `git status
+      # --porcelain` does report.
+      #
+      # The build regenerates into an absent directory because MirrorgenGenerate
+      # treats a missing output directory as invalidating its stamp.
+      - name: Empty the committed sample output
+        run: |
+          rm -rf samples/minimal/client/src/_generated \
+                 samples/pricing-rules/client/src/_generated
+
       - name: Build
         run: dotnet build Mirrorgen.sln --no-restore -c Release
 
@@ -34,14 +50,16 @@ jobs:
         # fresh clone runs `npm test` without invoking the CLI first. The Build
         # above re-emits them via the Mirrorgen MSBuild target; if the working
         # tree now differs, a walker/sample change shipped without regenerating
-        # the committed output. `git status --porcelain` catches both modified
-        # tracked files and brand-new emitted files (e.g. a new Domain.ts).
+        # the committed output. `git status --porcelain` catches modified
+        # tracked files, brand-new emitted files (e.g. a new Domain.ts), and —
+        # since the directories are emptied first — committed files that
+        # generation no longer produces at all.
         run: |
           changed="$(git status --porcelain -- \
             samples/minimal/client/src/_generated \
             samples/pricing-rules/client/src/_generated)"
           if [ -n "$changed" ]; then
-            echo "::error::Committed _generated artifacts are stale. Rebuild the samples and commit the refreshed _generated/ output (see samples/*/regen.sh)."
+            echo "::error::Committed _generated artifacts do not match what the build emits. Rebuild the samples and commit the refreshed _generated/ output (see samples/*/regen.sh). A ' D' line means the file is committed but generation does not produce it."
             echo "$changed"
             git --no-pager diff -- \
               samples/minimal/client/src/_generated \
