@@ -9,7 +9,13 @@ namespace Mirrorgen.Core;
 
 public static class BatchTranspiler
 {
-    public sealed record Result(int WrittenCount, int SkippedCount);
+    /// <param name="WrittenCount">Files created or replaced on disk.</param>
+    /// <param name="SkippedCount">Sources that transpiled to nothing — no
+    /// <c>[Transpile]</c> members — so no file was ever going to exist.</param>
+    /// <param name="UnchangedCount">Files whose content on disk already matched,
+    /// so nothing was written. Distinct from <paramref name="SkippedCount"/>:
+    /// this output exists and is current, it just did not need touching.</param>
+    public sealed record Result(int WrittenCount, int SkippedCount, int UnchangedCount = 0);
 
     /// <summary>
     /// Transpiles each source file relative to <paramref name="sourceRoot"/> into a
@@ -50,6 +56,7 @@ public static class BatchTranspiler
 
         int written = 0;
         int skipped = 0;
+        int unchanged = 0;
         var aggregateBuffer = options.AggregateOutputFile is null ? null : new List<string>();
         // Source path -> emitted .ts path, relative to the output directory.
         // Needed to turn a cross-file call into a module specifier.
@@ -81,26 +88,34 @@ public static class BatchTranspiler
             }
 
             var outFile = Path.Combine(dst, Path.ChangeExtension(rel, ".ts"));
-            var outFileDir = Path.GetDirectoryName(outFile);
-            if (!string.IsNullOrEmpty(outFileDir))
-            {
-                Directory.CreateDirectory(outFileDir);
-            }
-            File.WriteAllText(outFile, ts);
-            written++;
+            if (GeneratedFile.Write(outFile, ts) == GeneratedFile.Outcome.Written)
+                written++;
+            else
+                unchanged++;
         }
 
         if (aggregateBuffer is not null && options.AggregateOutputFile is { } aggregateFile)
         {
-            Directory.CreateDirectory(dst);
             var aggregated = AggregateOutputs(aggregateBuffer);
             var outFile = Path.Combine(dst, aggregateFile);
-            File.WriteAllText(outFile, aggregated);
-            written = aggregateBuffer.Count > 0 ? 1 : 0;
+            if (aggregateBuffer.Count == 0)
+            {
+                written = 0;
+            }
+            else if (GeneratedFile.Write(outFile, aggregated) == GeneratedFile.Outcome.Written)
+            {
+                written = 1;
+                unchanged = 0;
+            }
+            else
+            {
+                written = 0;
+                unchanged = 1;
+            }
             // file-per-tree outputs already skipped via the early continue above
         }
 
-        return new Result(written, skipped);
+        return new Result(written, skipped, unchanged);
     }
 
     /// <summary>

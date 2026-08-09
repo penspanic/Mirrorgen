@@ -89,9 +89,7 @@ static int RunTranspile(ReadOnlySpan<string> rest)
     }
     else
     {
-        var dir = Path.GetDirectoryName(Path.GetFullPath(outputPath));
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        File.WriteAllText(outputPath, ts);
+        GeneratedFile.Write(outputPath, ts);
     }
     return 0;
 }
@@ -147,9 +145,7 @@ static int RunFixtures(ReadOnlySpan<string> rest)
     }
     else
     {
-        var dir = Path.GetDirectoryName(Path.GetFullPath(outputPath));
-        if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-        File.WriteAllText(outputPath, json);
+        GeneratedFile.Write(outputPath, json);
     }
     return 0;
 }

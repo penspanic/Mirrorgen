@@ -11,6 +11,49 @@
     </PropertyGroup>
 
     <!--
+      Which target framework generates.
+
+      Generation reads C# *source*, so its output does not depend on the
+      framework being compiled: every leg of a multi-targeted build produces
+      identical text. But MirrorgenOutput is one path while the incremental
+      stamp below lives under IntermediateOutputPath, which is per-TFM — so
+      each leg saw its own stamp as missing, ran, and wrote the same file as
+      the others. Inner builds run in parallel, so a three-TFM project raced
+      against itself on every build; the visible symptom was "the process
+      cannot access the file ... because it is being used by another process"
+      on whichever leg lost, reported as a generation error.
+
+      Pin one leg instead. This is a .targets, imported after the project body,
+      so TargetFrameworks is set here — it is not in the paired .props, which
+      NuGet imports before the body.
+
+      Override MirrorgenGenerateForTargetFramework when the chosen leg matters:
+      with MirrorgenConfig set, the plugin is loaded from that leg's TargetPath.
+    -->
+    <PropertyGroup Condition="'$(MirrorgenGenerateForTargetFramework)' == '' and '$(TargetFrameworks)' != ''">
+        <_MirrorgenTargetFrameworkList>$(TargetFrameworks.Trim().Trim(';'))</_MirrorgenTargetFrameworkList>
+        <MirrorgenGenerateForTargetFramework>$(_MirrorgenTargetFrameworkList.Split(';')[0])</MirrorgenGenerateForTargetFramework>
+    </PropertyGroup>
+    <PropertyGroup>
+        <MirrorgenGenerateForTargetFramework>$(MirrorgenGenerateForTargetFramework.Trim())</MirrorgenGenerateForTargetFramework>
+        <!-- Single-TFM projects have no leg to choose between. -->
+        <_MirrorgenGeneratingLeg Condition="'$(TargetFrameworks)' == '' or '$(TargetFramework)' == '$(MirrorgenGenerateForTargetFramework)'">true</_MirrorgenGeneratingLeg>
+    </PropertyGroup>
+
+    <!--
+      A pin naming a framework this project does not build selects no leg at
+      all, and the only evidence would be generated output that silently stops
+      being regenerated. Checked in the outer build (TargetFramework empty), so
+      it is reported once rather than once per leg.
+    -->
+    <Target Name="MirrorgenValidateGeneratingTargetFramework"
+            BeforeTargets="Build;DispatchToInnerBuilds"
+            Condition="'$(MirrorgenOutput)' != '' and '$(TargetFrameworks)' != '' and '$(TargetFramework)' == ''">
+        <Error Condition="!$([System.String]::Copy(';$(TargetFrameworks.Trim().Trim(';'));').Contains(';$(MirrorgenGenerateForTargetFramework);'))"
+               Text="MirrorgenGenerateForTargetFramework is '$(MirrorgenGenerateForTargetFramework)', which is not one of this project's TargetFrameworks ('$(TargetFrameworks)'). No target framework would run generation, so MirrorgenOutput would keep whatever it holds today without anything saying so. Set it to one of them, or clear it to use the first." />
+    </Target>
+
+    <!--
       IntermediateOutputPath is filled in by the SDK after this file is
       imported, so stamp file paths are referenced inline in the target
       attributes (which are evaluated lazily) rather than captured into a
@@ -24,7 +67,7 @@
     -->
     <Target Name="MirrorgenGenerate"
             AfterTargets="Build"
-            Condition="'$(MirrorgenOutput)' != ''"
+            Condition="'$(MirrorgenOutput)' != '' and '$(_MirrorgenGeneratingLeg)' == 'true'"
             Inputs="@(Compile);@(MirrorgenAdditionalSource);$(TargetPath)"
             Outputs="$(IntermediateOutputPath)mirrorgen.stamp">
         <MakeDir Directories="$(IntermediateOutputPath)" />
@@ -51,7 +94,7 @@
     -->
     <Target Name="MirrorgenEmitFixtures"
             AfterTargets="Build"
-            Condition="'$(MirrorgenOutput)' != '' and '$(MirrorgenEmitFixtures)' == 'true'"
+            Condition="'$(MirrorgenOutput)' != '' and '$(MirrorgenEmitFixtures)' == 'true' and '$(_MirrorgenGeneratingLeg)' == 'true'"
             Inputs="$(TargetPath)"
             Outputs="$(IntermediateOutputPath)mirrorgen.fixtures.stamp">
         <MakeDir Directories="$(IntermediateOutputPath)" />

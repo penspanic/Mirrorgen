@@ -40,9 +40,7 @@ public sealed class MirrorgenFixturesTask : Microsoft.Build.Utilities.Task
             var fixtures = FixtureGenerator.GenerateForAssembly(asm, registry);
             var json = FixtureGenerator.SerializeToJson(fixtures, registry);
 
-            var dir = Path.GetDirectoryName(Path.GetFullPath(OutputPath));
-            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
-            File.WriteAllText(OutputPath, json);
+            GeneratedFile.Write(OutputPath, json);
 
             Log.LogMessage(
                 MessageImportance.High,
