@@ -37,6 +37,13 @@ _generated/
 !samples/minimal/client/src/_generated/**
 !samples/pricing-rules/client/src/_generated/
 !samples/pricing-rules/client/src/_generated/**
+# ...but the un-ignore above is broad, and an output directory is not only
+# emitted files. Two .mirrorgen.stamp files reached a commit that way while a
+# stamp-beside-the-output design was being tried and then dropped, and CI's
+# currency check could not see them: it runs `git status --porcelain`, which
+# reports modified and untracked paths, not tracked paths that should never
+# have been there.
+samples/*/client/src/_generated/.mirrorgen*.stamp
 
 # OS
 .DS_Store
